@@ -318,47 +318,51 @@ class TeX(object):
         ELEMENT_NODE = Macro.ELEMENT_NODE
 
         while 1:
-            # Get the next token
-            token = next()
+            try:
+                # Get the next token
+                token = next()
 
-            # Token is null, ignore it
-            if token is None:
-                continue
-
-            # Macro that has already been expanded
-            elif token.nodeType == ELEMENT_NODE:
-                pass
-
-            # We need to expand this one
-            elif token.macroName is not None:
-                try:
-                    # By default, invoke() should put the macro instance
-                    # itself into the output stream.  We'll handle this
-                    # automatically here if `None' is received.  If you
-                    # really don't want anything in the output stream,
-                    # just return `[ ]'.
-                    obj = createElement(token.macroName)
-                    obj.contextDepth = token.contextDepth
-                    obj.parentNode = token.parentNode
-                    tokens = obj.invoke(self)
-                    if tokens is None:
-#                       log.info('expanding %s %s', token.macroName, obj)
-                        pushToken(obj)
-                    elif tokens:
-#                       log.info('expanding %s %s', token.macroName, ''.join([x.source for x in tokens]))
-                        pushTokens(tokens)
+                # Token is null, ignore it
+                if token is None:
                     continue
-                except Exception as message:
-                    msg = str(message)
-                    if msg.strip():
-                        msg = ' (%s)' % msg.strip()
-                    log.error('Error while expanding "%s"%s%s',
-                              token.macroName, self.lineInfo, msg)
-                    raise
+
+                # Macro that has already been expanded
+                elif token.nodeType == ELEMENT_NODE:
+                    pass
+
+                # We need to expand this one
+                elif token.macroName is not None:
+                    try:
+                        # By default, invoke() should put the macro instance
+                        # itself into the output stream.  We'll handle this
+                        # automatically here if `None' is received.  If you
+                        # really don't want anything in the output stream,
+                        # just return `[ ]'.
+                        obj = createElement(token.macroName)
+                        obj.contextDepth = token.contextDepth
+                        obj.parentNode = token.parentNode
+                        tokens = obj.invoke(self)
+                        if tokens is None:
+#                       log.info('expanding %s %s', token.macroName, obj)
+                            pushToken(obj)
+                        elif tokens:
+#                       log.info('expanding %s %s', token.macroName, ''.join([x.source for x in tokens]))
+                            pushTokens(tokens)
+                        continue
+                    except Exception as message:
+                        msg = str(message)
+                        if msg.strip():
+                            msg = ' (%s)' % msg.strip()
+                        log.error('Error while expanding "%s"%s%s',
+                                  token.macroName, self.lineInfo, msg)
+                        raise
 
 #           tokenlog.debug('%s: %s', type(token), token.ownerDocument)
 
-            yield token
+                yield token
+            except StopIteration:
+                return
+
 
     def createSubProcess(self):
         """

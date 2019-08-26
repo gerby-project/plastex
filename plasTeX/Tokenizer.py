@@ -278,38 +278,41 @@ class Tokenizer(object):
             return read(1)
 
         while True:
-            token = _read1()
+            try:
+                token = _read1()
 
-            if not token:
-                break
+                if not token:
+                    break
 
-            if token == '\n':
-                self.lineNumber += 1
-                self.context.meta["lines"] += 1
+                if token == '\n':
+                    self.lineNumber += 1
+                    self.context.meta["lines"] += 1
 
-            code = whichCode(token)
+                code = whichCode(token)
 
-            if code == CC_SUPER:
+                if code == CC_SUPER:
 
-                # Handle characters like ^^M, ^^@, etc.
-                next_char = _read1()
-
-                if next_char != token:
-                    self.pushChar(next_char)
-                else:
+                    # Handle characters like ^^M, ^^@, etc.
                     next_char = _read1()
-                    num = ord(next_char)
-                    if num >= 64:
-                        token = chr(num-64)
+
+                    if next_char != token:
+                        self.pushChar(next_char)
                     else:
-                        token = chr(num+64)
-                    code = whichCode(token)
+                        next_char = _read1()
+                        num = ord(next_char)
+                        if num >= 64:
+                            token = chr(num-64)
+                        else:
+                            token = chr(num+64)
+                        code = whichCode(token)
 
-            # Just go to the next character if you see one of these...
-            if code == CC_IGNORED or code == CC_INVALID:
-                continue
+                # Just go to the next character if you see one of these...
+                if code == CC_IGNORED or code == CC_INVALID:
+                    continue
 
-            yield classes[code](token)
+                yield classes[code](token)
+            except StopIteration:
+                return
 
     def pushChar(self, char):
         """
@@ -377,78 +380,78 @@ class Tokenizer(object):
         prev = None
 
         while 1:
+            try:
+                # Purge mybuffer first
+                while mybuffer:
+                    yield mybuffer.pop(0)
 
-            # Purge mybuffer first
-            while mybuffer:
-                yield mybuffer.pop(0)
+                # Get the next character
+                token = next(charIter)
 
-            # Get the next character
-            token = next(charIter)
+                if token.nodeType == ELEMENT_NODE:
+                    raise ValueError('Expanded tokens should never make it here')
 
-            if token.nodeType == ELEMENT_NODE:
-                raise ValueError('Expanded tokens should never make it here')
+                code = token.catcode
 
-            code = token.catcode
+                # Short circuit letters and other since they are so common
+                if code == CC_LETTER or code == CC_OTHER:
+                    self.state = STATE_M
 
-            # Short circuit letters and other since they are so common
-            if code == CC_LETTER or code == CC_OTHER:
-                self.state = STATE_M
-
-            # Whitespace
-            elif code == CC_SPACE:
-                if self.state  == STATE_S or self.state == STATE_N:
-                    continue
-                self.state = STATE_S
-                token = Space(' ')
-
-            # End of line
-            elif code == CC_EOL:
-                state = self.state
-                if state == STATE_S:
-                    self.state = STATE_N
-                    continue
-                elif state == STATE_M:
-                    token = Space(' ')
-                    code = CC_SPACE
-                    self.state = STATE_N
-                elif state == STATE_N:
-                    # ord(token) != 10 is the same as saying token != '\n'
-                    # but it is much faster.
-                    if ord(token) != 10:
-                        self.lineNumber += 1
-                        self.readline()
-                    token = EscapeSequence('par')
-                    # Prevent adjacent paragraphs
-                    if prev == token:
+                # Whitespace
+                elif code == CC_SPACE:
+                    if self.state  == STATE_S or self.state == STATE_N:
                         continue
-                    code = CC_ESCAPE
+                    self.state = STATE_S
+                    token = Space(' ')
 
-            # Escape sequence
-            elif code == CC_ESCAPE:
-
-                # Get name of command sequence
-                self.state = STATE_M
-
-                for token in charIter:
-
-                    if token.catcode == CC_LETTER:
-                        word = [token]
-                        for t in charIter:
-                            if t.catcode == CC_LETTER:
-                                word.append(t)
-                            else:
-                                pushChar(t)
-                                break
-                        token = EscapeSequence(''.join(word))
-
-                    elif token.catcode == CC_EOL:
-                        #pushChar(token)
-                        #token = EscapeSequence()
+                # End of line
+                elif code == CC_EOL:
+                    state = self.state
+                    if state == STATE_S:
+                        self.state = STATE_N
+                        continue
+                    elif state == STATE_M:
                         token = Space(' ')
-                        self.state = STATE_S
+                        code = CC_SPACE
+                        self.state = STATE_N
+                    elif state == STATE_N:
+                        # ord(token) != 10 is the same as saying token != '\n'
+                        # but it is much faster.
+                        if ord(token) != 10:
+                            self.lineNumber += 1
+                            self.readline()
+                        token = EscapeSequence('par')
+                        # Prevent adjacent paragraphs
+                        if prev == token:
+                            continue
+                        code = CC_ESCAPE
 
-                    else:
-                        token = EscapeSequence(token)
+                # Escape sequence
+                elif code == CC_ESCAPE:
+
+                    # Get name of command sequence
+                    self.state = STATE_M
+
+                    for token in charIter:
+
+                        if token.catcode == CC_LETTER:
+                            word = [token]
+                            for t in charIter:
+                                if t.catcode == CC_LETTER:
+                                    word.append(t)
+                                else:
+                                    pushChar(t)
+                                    break
+                            token = EscapeSequence(''.join(word))
+
+                        elif token.catcode == CC_EOL:
+                            #pushChar(token)
+                            #token = EscapeSequence()
+                            token = Space(' ')
+                            self.state = STATE_S
+
+                        else:
+                            token = EscapeSequence(token)
 #
 # Because we can implement macros both in LaTeX and Python, we don't
 # always want the whitespace to be eaten.  For example, implementing
@@ -456,43 +459,45 @@ class Tokenizer(object):
 # another macro class that would eat whitspace incorrectly.  So we
 # have to do this kind of thing in the parse() method of Macro.
 #
-                    if token.catcode != CC_EOL:
+                        if token.catcode != CC_EOL:
 # HACK: I couldn't get the parse() thing to work so I'm just not
 #       going to parse whitespace after EscapeSequences that end in
 #       non-letter characters as a half-assed solution.
-                        if token[-1] in encoding.stringletters():
-                            # Absorb following whitespace
-                            self.state = STATE_S
+                            if token[-1] in encoding.stringletters():
+                                # Absorb following whitespace
+                                self.state = STATE_S
 
-                    break
+                        break
 
-                else: token = EscapeSequence()
+                    else: token = EscapeSequence()
 
-                # Check for any \let aliases
-                token = context.lets.get(token, token)
+                    # Check for any \let aliases
+                    token = context.lets.get(token, token)
 
-                # TODO: This action should be generalized so that the
-                #       tokens are processed recursively
-                if token is not token and token.catcode == CC_COMMENT:
+                    # TODO: This action should be generalized so that the
+                    #       tokens are processed recursively
+                    if token is not token and token.catcode == CC_COMMENT:
+                        self.readline()
+                        self.lineNumber += 1
+                        self.state = STATE_N
+                        continue
+
+                elif code == CC_COMMENT:
                     self.readline()
                     self.lineNumber += 1
                     self.state = STATE_N
                     continue
 
-            elif code == CC_COMMENT:
-                self.readline()
-                self.lineNumber += 1
-                self.state = STATE_N
-                continue
+                elif code == CC_ACTIVE:
+                    token = EscapeSequence('active::%s' % token)
+                    token = context.lets.get(token, token)
+                    self.state = STATE_M
 
-            elif code == CC_ACTIVE:
-                token = EscapeSequence('active::%s' % token)
-                token = context.lets.get(token, token)
-                self.state = STATE_M
+                else:
+                    self.state = STATE_M
 
-            else:
-                self.state = STATE_M
+                prev = token
 
-            prev = token
-
-            yield token
+                yield token
+            except StopIteration:
+                return
