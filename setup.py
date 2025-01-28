@@ -14,6 +14,10 @@ setup(name="plasTeX",
       version="1.0",
       author="Kevin D. Smith",
       author_email="Kevin.Smith@sas.com",
+      install_requires=[
+         "MarkupSafe==1.1.1",
+         "Jinja2==2.11.2",
+      ],
       #url="",
       packages = [
          'plasTeX',
