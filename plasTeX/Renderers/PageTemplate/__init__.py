@@ -45,7 +45,23 @@ else:
         env = Environment(trim_blocks=True, lstrip_blocks=True)
         env.globals['debug'] = debug
 
+        # gerby: compile the template once at load time instead of on every
+        # render call; recompiling per node dominated rendering time. A
+        # template that fails to compile keeps the old behavior of warning
+        # and rendering as the empty string.
+        try:
+            tpl = env.from_string(s)
+        except jinja2.exceptions.TemplateError as e:
+            tpl = None
+            compile_error = e
+
         def renderjinja2(obj, s=s):
+            if tpl is None:
+                log.warning('Jinja2 template error: {} while rendering node {}'
+                            ' with source\n {}\n'.format(
+                            compile_error, obj.nodeName, obj.source))
+                return ''
+
             tvars = {'here':obj,
                      'obj':obj,
                      'doc':obj.ownerDocument,
@@ -55,7 +71,6 @@ else:
                      'templates':obj.renderer,
                      'tpl_src': s}
 
-            tpl = env.from_string(s)
             try:
                 return tpl.render(tvars)
             except jinja2.exceptions.TemplateError as e:
