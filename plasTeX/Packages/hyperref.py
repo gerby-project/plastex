@@ -4,7 +4,7 @@
 Implementation of the hyperref package
 
 TO DO:
-- \autoref doesn't look for \*autorefname, it only looks for \*name
+- \\autoref doesn't look for \\*autorefname, it only looks for \\*name
 - Layouts
 - Forms optional parameters
 

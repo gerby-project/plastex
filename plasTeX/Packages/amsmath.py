@@ -117,9 +117,9 @@ class DeclareMathOperator(Command):
         self.parse(tex)
         a = self.attributes
         if a.get('*modifier*'):
-            macro = '\operatorname*'
+            macro = '\\operatorname*'
         else:
-            macro = '\operatorname'
+            macro = '\\operatorname'
         definition = [Tokenizer.Token(macro), Tokenizer.Token('{')] + a['definition']+[Tokenizer.Token('}')]
         args = (a['name'], 0, definition)
         deflog.debug('math operator %s %s', *args)

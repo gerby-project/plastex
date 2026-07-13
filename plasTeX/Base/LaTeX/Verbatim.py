@@ -15,7 +15,7 @@ class verbatim(Environment):
     doCharSubs = False
 
     def invoke(self, tex):
-        """ Parse until we reach `\end{verbatim}' or `\endverbatim' """
+        """ Parse until we reach `\\end{verbatim}' or `\\endverbatim' """
         if self.macroMode == Environment.MODE_END:
             return
 

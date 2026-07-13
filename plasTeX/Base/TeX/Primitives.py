@@ -72,7 +72,7 @@ class MathShift(Command):
         """
         This gets a bit tricky because we need to keep track of both
         our beginning and ending.  We also have to take into
-        account \mbox{}es.
+        account `\\mbox`{}es.
 
         """
         inEnv = type(self).inEnv
@@ -386,7 +386,7 @@ class catcode(Command):
         a = self.parse(tex)
         self.ownerDocument.context.catcode(chr(a['char']), a['code'])
     def source(self):
-        return '\\catcode`\%s=%s' % (chr(self.attributes['char']),
+        return '\\catcode`\\%s=%s' % (chr(self.attributes['char']),
                                      self.attributes['code'])
     source = property(source)
 
