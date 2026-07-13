@@ -1,10 +1,8 @@
-#!/usr/bin/env python
-
-"""
+r"""
 Implementation of the hyperref package
 
 TO DO:
-- \\autoref doesn't look for \\*autorefname, it only looks for \\*name
+- \autoref doesn't look for \*autorefname, it only looks for \*name
 - Layouts
 - Forms optional parameters
 
@@ -12,7 +10,6 @@ TO DO:
 
 from plasTeX import Command, Environment
 from plasTeX.Base.LaTeX.Crossref import ref, pageref
-from plasTeX.Packages.nameref import Nameref, nameref
 import urllib.parse
 
 def addBaseURL(self, urlarg):
@@ -32,6 +29,7 @@ class href(Command):
     def invoke(self, tex):
         res = Command.invoke(self, tex)
         self.attributes['url'] = addBaseURL(self, 'url')
+        self.nonNormalizedAttrs = ['url']
         return res
 
 class url(Command):
@@ -39,6 +37,7 @@ class url(Command):
     def invoke(self, tex):
         res = Command.invoke(self, tex)
         self.attributes['url'] = addBaseURL(self, 'url')
+        self.nonNormalizedAttrs = ['url']
         return res
 
 class nolinkurl(Command):
@@ -46,6 +45,7 @@ class nolinkurl(Command):
     def invoke(self, tex):
         res = Command.invoke(self, tex)
         self.attributes['url'] = addBaseURL(self, 'url')
+        self.nonNormalizedAttrs = ['url']
         return res
 
 class hyperbaseurl(Command):
@@ -65,6 +65,7 @@ class hyperimage(Command):
     def invoke(self, tex):
         res = Command.invoke(self, tex)
         self.attributes['url'] = addBaseURL(self, 'url')
+        self.nonNormalizedAttrs = ['url']
         return res
 
 class hyperdef(Command):
@@ -108,7 +109,7 @@ class pdfstringdef(Command):
     args = 'macroname:str tex:str'
 
 class texorpdfstring(Command):
-    args = 'tex:str pdf:str'
+    args = 'tex pdf:str'
 
 class pdfstringdefDisableCommands(Command):
     args = 'tex:str'

@@ -1,14 +1,12 @@
-#!/usr/bin/env python
-
 """
 C.7 Mathematical Formulas (p187)
 
 """
 
 from plasTeX.Base.LaTeX.Arrays import Array
-from plasTeX import Command, Environment, sourceChildren
-from plasTeX import DimenCommand, GlueCommand
-from plasTeX.Logging import getLogger
+from plasTeX import Command, Environment, sourceChildren, NoCharSubEnvironment
+from plasTeX import DimenCommand, GlueCommand, TeXFragment
+from typing import Optional
 
 #
 # C.7.1
@@ -26,19 +24,22 @@ class NegativeThinSpace(Command):
 
 class MediumSpace(Command):
     macroName = ':'
-    str = '\u8196'
+    str = '\u205f'
 
 class ThickSpace(Command):
     macroName = ';'
-    str = '\u8194'
+    str = '\u2005'
 
 class ThinSpace_(Command):
     macroName = '/'
     str = '\u2009'
 
-class MathEnvironment(Environment):
+class MathEnvironment(NoCharSubEnvironment):
     mathMode = True
-    doCharSubs = False
+
+    @property
+    def mathjax_source(self):
+        return mathjax_lt_gt(self.source)
 
 class MathEnvironmentPre(MathEnvironment):
     """
@@ -52,12 +53,23 @@ class MathEnvironmentPre(MathEnvironment):
 
 # Need \newcommand\({\begin{math}} and \newcommand\){\end{math}}
 
+def mathjax_lt_gt(s: str) -> str:
+    """Help mathjax deal with < and >, see http://docs.mathjax.org/en/latest/input/tex/html.html?highlight=lt#html-special-characters."""
+    return s.replace('<', r'\lt ').replace('>', r'\gt ')
+
 class math(MathEnvironment):
     @property
     def source(self):
         if self.hasChildNodes():
             return u'$%s$' % sourceChildren(self)
         return '$'
+
+    @property
+    def mathjax_source(self):
+        if self.hasChildNodes():
+            s = sourceChildren(self)
+            return r'\({}\)'.format(mathjax_lt_gt(s))
+        return ''
 
 class displaymath(MathEnvironment):
     blockType = True
@@ -87,7 +99,10 @@ class EndDisplayMath(Command):
 
 class BeginMath(Command):
     macroName = '('
+    disableMath:bool = False
     def invoke(self, tex):
+        if self.disableMath:
+            return Command.invoke(self,tex)
         o = self.ownerDocument.createElement('math')
         o.macroMode = Command.MODE_BEGIN
         self.ownerDocument.context.push(o)
@@ -95,28 +110,44 @@ class BeginMath(Command):
 
 class EndMath(Command):
     macroName = ')'
+    disableMath:bool = False
     def invoke(self, tex):
+        if self.disableMath:
+            return Command.invoke(self,tex)
         o = self.ownerDocument.createElement('math')
         o.macroMode = Command.MODE_END
         self.ownerDocument.context.pop(o)
         return [o]
 
 class ensuremath(Command):
+    """
+    Stub for ensuremath. This implementation is extremely wrong and (hopefully)
+    emulates the correct behavior only when used with the HTML5 renderer.
+    See the unit tests too.
+    """
     args = 'self'
+    mathMode = True
+    @property
+    def source(self):
+        return sourceChildren(self)
+
+    @property
+    def mathjax_source(self):
+        if self.hasChildNodes():
+            return mathjax_lt_gt(sourceChildren(self))
+        return ""
 
 class equation(MathEnvironment):
     blockType = True
     counter = 'equation'
 
-class EqnarrayStar(Array):
-    macroName = 'eqnarray*'
+class EqnarrayStar(Array, MathEnvironmentPre, NoCharSubEnvironment):
+    macroName = 'eqnarray*' # type: Optional[str]
     blockType = True
     mathMode = True
-    doCharSubs = False
 
     class lefteqn(Command):
         args = 'self'
-
         def digest(self, tokens):
             res = Command.digest(self, tokens)
             obj = self.parentNode
@@ -128,21 +159,17 @@ class EqnarrayStar(Array):
             return res
 
     class ArrayCell(Array.ArrayCell):
-        doCharSubs = False
         @property
         def source(self):
             return '$\\displaystyle %s $' % sourceChildren(self, par=False)
 
-    class ArrayRow(Array.ArrayRow):
-        doCharSubs = False
-
 class eqnarray(EqnarrayStar):
     macroName = None
-    counter = 'equation'
+    counter: Optional[str] = 'equation'
 
     class EndRow(Array.EndRow):
         """ End of a row """
-        counter = 'equation'
+        counter: Optional[str] = 'equation'
         def invoke(self, tex):
             res = Array.EndRow.invoke(self, tex)
             res[1].ref = self.ref
@@ -155,8 +182,8 @@ class eqnarray(EqnarrayStar):
             return res
         res[1].ref = self.ref
         return res
-
 class nonumber(Command):
+
     def invoke(self, tex):
         self.ownerDocument.context.counters['equation'].addtocounter(-1)
 
@@ -184,18 +211,6 @@ class jot(DimenCommand):
 
 class mathindent(DimenCommand):
     value = DimenCommand.new(0)
-
-class abovedisplayskip(GlueCommand):
-    value = GlueCommand.new(0)
-
-class belowdisplayskip(GlueCommand):
-    value = GlueCommand.new(0)
-
-class abovedisplayshortskip(GlueCommand):
-    value = GlueCommand.new(0)
-
-class belowdisplayshortskip(GlueCommand):
-    value = GlueCommand.new(0)
 
 
 #
@@ -233,7 +248,6 @@ class ddots(Command):
 #
 
 class MathSymbol(Command):
-    doCharSubs = False
     pass
 
 # Lowercase
@@ -269,6 +283,9 @@ class chi(MathSymbol): str = chr(967)
 class psi(MathSymbol): str = chr(968)
 class omega(MathSymbol): str = chr(969)
 
+class imath(MathSymbol): str = chr(305)
+class jmath(MathSymbol): str = chr(567)
+
 # Uppercase
 class Gamma(MathSymbol): str = chr(915)
 class Delta(MathSymbol): str = chr(916)
@@ -281,7 +298,6 @@ class Upsilon(MathSymbol): str = chr(978)
 class Phi(MathSymbol): str = chr(934)
 class Psi(MathSymbol): str = chr(936)
 class Omega(MathSymbol): str = chr(8486)
-
 
 #
 # Table 3.4: Binary Operation Symbols
@@ -399,12 +415,6 @@ class hookrightarrow(MathSymbol): str = chr(8618)
 class rightharpoonup(MathSymbol): str = chr(8640)
 class rightharpoondown(MathSymbol): str = chr(8641)
 class leadsto(MathSymbol): pass
-class uparrow(MathSymbol): str = chr(8593)
-class Uparrow(MathSymbol): str = chr(8657)
-class downarrow(MathSymbol): str = chr(8595)
-class Downarrow(MathSymbol): str = chr(8659)
-class updownarrow(MathSymbol): str = chr(8597)
-class Updownarrow(MathSymbol): str = chr(8661)
 class nearrow(MathSymbol): str = chr(8599)
 class searrow(MathSymbol): str = chr(8600)
 class swarrow(MathSymbol): str = chr(8601)
@@ -416,8 +426,6 @@ class nwarrow(MathSymbol): str = chr(8598)
 
 class aleph(MathSymbol): str = chr(8501)
 class hbar(MathSymbol): str = chr(8463)
-class imath(MathSymbol): pass
-class jmath(MathSymbol): pass
 class ell(MathSymbol): str = chr(8467)
 class wp(MathSymbol): str = chr(8472)
 class Re(MathSymbol): str = chr(8476)
@@ -437,7 +445,6 @@ class neg(MathSymbol): pass
 class flat(MathSymbol): str = chr(9837)
 class natural(MathSymbol): str = chr(9838)
 class sharp(MathSymbol): str = chr(9839)
-class backslash(MathSymbol): str = chr(92)
 class partial(MathSymbol): str = chr(8706)
 class infty(MathSymbol): str = chr(8734)
 class Box(MathSymbol): pass
@@ -518,11 +525,34 @@ class tanh(MathSymbol): pass
 # C.7.5 Delimiters
 #
 
-class left(Command):
-    args = 'delim'
+class AngleReplacingDelimiter(Command):
+    """
+    Utility classes for delimiter such as `\\big` which
+    needs to replace `<` or `>` as arguments by `\\langle` or
+    `\\rangle`. Note that people should never write this anyway...
+    """
+    args = 'char'
 
-class right(Command):
-    args = 'delim'
+    def invoke(self, tex):
+        Command.invoke(self, tex)
+        if self.attributes['char'].textContent.strip() == '<':
+            newarg = TeXFragment()
+            newarg.ownerDocument = self.ownerDocument
+            newarg.parentNode = self
+            newarg.appendChild(langle())
+            self.attributes['char'] = newarg
+            self.argSource = r'\langle '
+        elif self.attributes['char'].textContent == '>':
+            newarg = TeXFragment()
+            newarg.ownerDocument = self.ownerDocument
+            newarg.parentNode = self
+            newarg.appendChild(rangle())
+            self.attributes['char'] = newarg
+            self.argSource = r'\rangle '
+
+class left(AngleReplacingDelimiter): pass
+
+class right(AngleReplacingDelimiter): pass
 
 # Table 3.10: Delimiters and TeXbook (p359)
 
@@ -554,24 +584,22 @@ class Vert(Delimiter): pass
 class backslash(Delimiter): pass
 class bracevert(Delimiter): pass
 
-class bigl(Delimiter): pass
+class big(AngleReplacingDelimiter): pass
+class bigl(AngleReplacingDelimiter): pass
 class bigm(Delimiter): pass
-class bigr(Delimiter): pass
-class Bigl(Delimiter): pass
+class bigr(AngleReplacingDelimiter): pass
+class Bigl(AngleReplacingDelimiter): pass
 class Bigm(Delimiter): pass
-class Bigr(Delimiter): pass
-class biggl(Delimiter): pass
-class biggr(Delimiter): pass
-class Biggl(Delimiter): pass
-class Biggr(Delimiter): pass
+class Bigr(AngleReplacingDelimiter): pass
+class biggl(AngleReplacingDelimiter): pass
+class biggr(AngleReplacingDelimiter): pass
+class Biggl(AngleReplacingDelimiter): pass
+class Biggr(AngleReplacingDelimiter): pass
 class biggm(Delimiter): pass
 class Biggm(Delimiter): pass
-class Big(Delimiter):
-    args = 'char'
-class bigg(Delimiter):
-    args = 'char'
-class Bigg(Delimiter):
-    args = 'char'
+class Big(AngleReplacingDelimiter): pass
+class bigg(AngleReplacingDelimiter): pass
+class Bigg(AngleReplacingDelimiter): pass
 
 class choose(Command):
     pass
@@ -619,8 +647,6 @@ class ddot(MathAccent): pass
 
 class widehat(MathAccent): pass
 class widetilde(MathAccent): pass
-class imath(MathAccent): pass
-class jmath(MathAccent): pass
 class stackrel(MathAccent):
     args = 'top bottom'
 

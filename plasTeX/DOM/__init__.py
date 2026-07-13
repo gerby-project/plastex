@@ -1,7 +1,8 @@
-#!/usr/bin/env python
-
 import sys, re
-from plasTeX.Logging import getLogger
+import builtins
+from typing import Optional, NewType, List
+
+NodeType = NewType("NodeType", int)
 
 class DOMString(str):
     """
@@ -159,10 +160,9 @@ class ValidationErr(DOMException):
 class _DOMList(list):
     """ Generic List """
 
-    def length():
-        def fget(self): return len(self)
-        return locals()
-    length = property(**length())
+    @property
+    def length(self):
+        return len(self)
 
     def item(self, i):
         try: return self[i]
@@ -250,7 +250,8 @@ class NamedNodeMap(dict):
 
     """
 
-    def parentNode():
+    @property
+    def parentNode(self):
         """
         Get/Set the parent node
 
@@ -259,15 +260,14 @@ class NamedNodeMap(dict):
         our children.
 
         """
-        def fget(self):
-            return getattr(self, '_dom_parentNode', None)
-        def fset(self, value):
-            if getattr(self, '_dom_parentNode', None) is not value:
-                self._dom_parentNode = value
-                for value in list(self.values()):
-                    self._resetPosition(value.parentNode)
-        return locals()
-    parentNode = property(**parentNode())
+        return getattr(self, '_dom_parentNode', None)
+
+    @parentNode.setter
+    def parentNode(self, value):
+        if getattr(self, '_dom_parentNode', None) is not value:
+            self._dom_parentNode = value
+            for value in list(self.values()):
+                self._resetPosition(value.parentNode)
 
     @property
     def ownerDocument(self):
@@ -588,18 +588,18 @@ class Node(object):
 # End LaTeX Node extensions
 #
 
-    ELEMENT_NODE = 1
-    ATTRIBUTE_NODE = 2
-    TEXT_NODE = 3
-    CDATA_SECTION_NODE = 4
-    ENTITY_REFERENCE_NODE = 5
-    ENTITY_NODE = 6
-    PROCESSING_INSTRUCTION_NODE = 7
-    COMMENT_NODE = 8
-    DOCUMENT_NODE = 9
-    DOCUMENT_TYPE_NODE = 10
-    DOCUMENT_FRAGMENT_NODE = 11
-    NOTATION_NODE = 12
+    ELEMENT_NODE = NodeType(1)
+    ATTRIBUTE_NODE = NodeType(2)
+    TEXT_NODE = NodeType(3)
+    CDATA_SECTION_NODE = NodeType(4)
+    ENTITY_REFERENCE_NODE = NodeType(5)
+    ENTITY_NODE = NodeType(6)
+    PROCESSING_INSTRUCTION_NODE = NodeType(7)
+    COMMENT_NODE = NodeType(8)
+    DOCUMENT_NODE = NodeType(9)
+    DOCUMENT_TYPE_NODE = NodeType(10)
+    DOCUMENT_FRAGMENT_NODE = NodeType(11)
+    NOTATION_NODE = NodeType(12)
 
     DOCUMENT_POSITION_DISCONNECTED = 0x01
     DOCUMENT_POSITION_PRECEDING = 0x02
@@ -622,18 +622,19 @@ class Node(object):
     localName = None
     baseURI = None
 
-    nodeName = None
-    nodeValue = None
-    nodeType = None
+    nodeName = None # type: Optional[str]
+    nodeValue = None # type: Optional[str]
+    nodeType = None # type: Optional[NodeType]
     parentNode = None
-    ownerDocument = None
+    ownerDocument = None # type: Optional[Document]
     attributes = None
+    nonNormalizedAttrs = [] # type: List[str]
 
-    str = None
+    str = None # type: Optional[str]
 
     # String containing type of node relating to navigation.
     # Common values are: glossary, bibliography, contents, index, search, etc.
-    linkType = None
+    linkType = None # type: Optional[builtins.str]
 
     def toXML(self, debug=False):
         """
@@ -679,7 +680,7 @@ class Node(object):
 
         style = ''
         if hasattr(self, 'style') and self.style:
-            style = ' style="%s"' % xmlstr(self.style.inline)
+            style = ' style="%s"' % xmlstr(getattr(self.style, 'inline', self.style))
 
         ref = ''
         try:
@@ -724,7 +725,7 @@ class Node(object):
 
         # Render attributes
         if self.attributes:
-            for key, value in list(self.attributes.items()):
+            for key, value in self.attributes.items():
                 if value is None:
                     s.append('    <plastex:arg name="%s"/>\n' % key)
                 elif isinstance(value, dict):
@@ -744,7 +745,7 @@ class Node(object):
 
         # Render content
         if self.hasChildNodes():
-            if not(self.attributes and 'self' in list(self.attributes.keys())):
+            if not(self.attributes and 'self' in self.attributes):
                 for value in self.childNodes:
                     if hasattr(value, 'toXML'):
                         value = value.toXML()
@@ -1070,12 +1071,10 @@ class Node(object):
 
         """
         charsubs = charsubs or []
-        if not getattr(self, "doCharSubs", True) or self.ownerDocument.context.isMathMode:
-            charsubs = []
 
         if self.hasAttributes():
-            for value in list(self.attributes.values()):
-                if isinstance(value, Node):
+            for key, value in self.attributes.items():
+                if isinstance(value, Node) and key not in self.nonNormalizedAttrs:
                     value.normalize(charsubs)
 
         if not self.hasChildNodes():
@@ -1100,7 +1099,7 @@ class Node(object):
 
     def hasAttributes(self):
         """ Are there any attributes set? """
-        return not(not(self.attributes))
+        return bool(self.attributes)
 
     @property
     def textContent(self):
@@ -1179,9 +1178,9 @@ class Node(object):
             if res: return res
             if self.hasChildNodes() and other.hasChildNodes():
                 return self.childNodes < other.childNodes
-        except AttributeError:
+        except (AttributeError, TypeError):
             pass
-        return self.nodeName < other
+        return self.nodeName < other.nodeName
 
     def getFeature(self, feature, version):
         """ Get the requested feature """
@@ -1384,9 +1383,9 @@ class Attr(Node):
     nodeType = Node.ATTRIBUTE_NODE
 #   __slots__ = Node.NODE_SLOTS + ['name']
 
-    name = None
+    name = None # type: Optional[str]
     specified = None
-    value = None
+    value = None # type: Optional[str]
     ownerElement = None
     schemaTypeInfo = None
     isId = None
@@ -1394,18 +1393,21 @@ class Attr(Node):
     def __repr__(self):
         return '<%s attribute at 0x%s>' % (self.nodeName, id(self))
 
-    def nodeName():
-        def fget(self): return self.name
-        def fset(self, value): self.name = value
-        return locals()
-    nodeName = property(**nodeName())
+    @property # type: ignore # mypy#4125
+    def nodeName(self) -> Optional[str]: # type: ignore # mypy#4125
+        return self.name
 
-    def nodeValue():
-        def fget(self): return self.value
-        def fset(self, value): self.value = value
-        return locals()
-    nodeValue = property(**nodeValue())
+    @nodeName.setter
+    def nodeName(self, value):
+        self.name = value
 
+    @property # type: ignore # mypy#4125
+    def nodeValue(self):
+        return self.value
+
+    @nodeValue.setter
+    def nodeValue(self, value):
+        self.value = value
 
 class Element(Node):
     """
@@ -1430,11 +1432,13 @@ class Element(Node):
         self._dom_attributes = nnm
         return nnm
 
-    def tagName():
-        def fget(self): return self.nodeName
-        def fset(self, value): self.nodeName = value
-        return locals()
-    tagName = property(**tagName())
+    @property
+    def tagName(self):
+        return self.nodeName
+
+    @tagName.setter
+    def tagName(self, value):
+        self.nodeName = value
 
     def getAttribute(self, name):
         """
@@ -1749,16 +1753,6 @@ class Text(CharacterData):
         return self.parentNode.textContent
 
 
-class Comment(CharacterData):
-    """
-    Comment
-
-    http://www.w3.org/TR/2004/REC-DOM-Level-3-Core-20040407/core.html#ID-1728279322
-    """
-    nodeName = '#comment'
-    nodeType = Node.COMMENT_NODE
-    __slots__ = Node.TEXT_SLOTS
-
 
 class TypeInfo(object):
     """
@@ -1788,11 +1782,11 @@ class UserDataHandler(object):
     """
 
     # OperationType
-    NODE_CLONED = 1;
-    NODE_IMPORTED = 2;
-    NODE_DELETED = 3;
-    NODE_RENAMED = 4;
-    NODE_ADOPTED = 5;
+    NODE_CLONED = 1
+    NODE_IMPORTED = 2
+    NODE_DELETED = 3
+    NODE_RENAMED = 4
+    NODE_ADOPTED = 5
 
     def handle(self, operation, key, data, src, dst):
         raise NotImplementedError
@@ -1944,11 +1938,13 @@ class DocumentType(Node):
     systemId = None
     internalSubset = None
 
-    def nodeName():
-        def fget(self): return self.name
-        def fset(self, value): self.name = value
-        return locals()
-    nodeName = property(**nodeName())
+    @property # type: ignore # mypy#4125
+    def nodeName(self):
+        return self.name
+
+    @nodeName.setter
+    def nodeName(self, value):
+        self.name = value
 
 
 class Notation(Node):
@@ -2000,21 +1996,24 @@ class ProcessingInstruction(Node):
     nodeType = Node.PROCESSING_INSTRUCTION_NODE
     __slots__ = Node.NODE_SLOTS
 
-    target = None
-    data = None
+    target = None # type: Optional[str]
+    data = None # type: Optional[str]
 
-    def nodeName():
-        def fget(self): return self.target
-        def fset(self, value): self.target = value
-        return locals()
-    nodeName = property(**nodeName())
+    @property
+    def nodeName(self):
+        return self.target
 
-    def nodeValue():
-        def fget(self): return self.data
-        def fset(self, value): self.data = value
-        return locals()
-    nodeValue = property(**nodeValue())
+    @nodeName.setter
+    def nodeName(self, value):
+        self.target = value
 
+    @property
+    def nodeValue(self):
+        return self.data
+
+    @nodeValue.setter
+    def nodeValue(self, value):
+        self.data = value
 
 class Document(Node):
     """
@@ -2027,7 +2026,6 @@ class Document(Node):
     elementClass = Element
     documentFragmentClass = DocumentFragment
     textNodeClass = Text
-    commentClass = Comment
     cdataSectionClass = CDATASection
     processingInstructionClass = ProcessingInstruction
     attributeClass = Attr
@@ -2092,22 +2090,6 @@ class Document(Node):
 
         """
         o = self.textNodeClass(data)
-        o.ownerDocument = self
-        o.parentNode = None
-        return o
-
-    def createComment(self, data):
-        """
-        Instantiate a new comment node
-
-        Required Arguments:
-        data -- string to initialize the comment with
-
-        Returns:
-        new comment node
-
-        """
-        o = self.commentClass(data)
         o.ownerDocument = self
         o.parentNode = None
         return o

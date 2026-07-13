@@ -1,8 +1,6 @@
-#!/usr/bin/env python
-
 from plasTeX import Command
 from plasTeX.Base.LaTeX.Arrays import Array
-from plasTeX.Base.LaTeX.Math import EqnarrayStar, equation, eqnarray
+from plasTeX.Base.LaTeX.Math import EqnarrayStar, eqnarray
 #### Imports Added by Tim ####
 from plasTeX.Base.LaTeX.Math import math, MathEnvironmentPre
 
@@ -45,19 +43,25 @@ class MultilineStar(_AMSEquationStar):
     macroName = 'multiline*'
 
 class alignat(_AMSEquation):
-    pass
+    args = 'column:int'
 
 class AlignatStar(_AMSEquationStar):
+    args = 'column:int'
     macroName = 'alignat*'
 
 class split(_AMSEquation):
+    counter = None
+
+    class EndRow(_AMSEquation.EndRow):
+        counter = None
+
     pass
 
 #### Added by Tim ####
 class EquationStar(_AMSEquationStar):
     macroName = 'equation*'
 
-class aligned(_AMSEquation):
+class aligned(_AMSEquationStar):
     pass
 
 class gathered(MathEnvironmentPre):
@@ -65,12 +69,6 @@ class gathered(MathEnvironmentPre):
 
 class cases(_AMSEquation):
     pass
-
-class alignat(_AMSEquation):
-    args = 'column:int'
-class AlignatStar(_AMSEquationStar):
-    args = 'column:int'
-    macroName = 'alignat*'
 
 class flalign(_AMSEquation):
     pass
@@ -101,8 +99,7 @@ class bmatrix(Array):
 class Bmatrix(Array):
     pass
 
-#### Inline Math
-class smallmatrix(MathEnvironmentPre):
+class smallmatrix(Array):
     pass
 
 class dddot(math):
@@ -117,9 +114,9 @@ class DeclareMathOperator(Command):
         self.parse(tex)
         a = self.attributes
         if a.get('*modifier*'):
-            macro = '\\operatorname*'
+            macro = r'\operatorname*'
         else:
-            macro = '\\operatorname'
+            macro = r'\operatorname'
         definition = [Tokenizer.Token(macro), Tokenizer.Token('{')] + a['definition']+[Tokenizer.Token('}')]
         args = (a['name'], 0, definition)
         deflog.debug('math operator %s %s', *args)
@@ -142,3 +139,6 @@ class numberwithin(Command):
         # Formatting
         ctx['the'+target].format = '{}.${{{}}}'.format(
                 ctx['the'+control].format, target)
+
+class eqref(Command):
+    args = 'label:idref'

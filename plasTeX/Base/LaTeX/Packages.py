@@ -1,20 +1,11 @@
-#!/usr/bin/env python
-
 """
 C.5 Classes, Packages, and Page Styles (p176)
 
 """
-import sys, os
 from plasTeX import Command, Environment, DimenCommand, Token
 from plasTeX.Logging import getLogger
 
-# Put the plasTeX packages into the path
-from plasTeX import Packages
-sys.path.append(os.path.dirname(Packages.__file__))
-del Packages
-
 log = getLogger()
-status = getLogger('status')
 
 class PackageLoader(Command):
     extension = '.sty'
@@ -22,8 +13,9 @@ class PackageLoader(Command):
         try:
             self.ownerDocument.context.loadPackage(
                     tex, file+self.extension, options or {})
-        except Exception as msg:
-            log.error('Could not load package "%s": %s' % (file, msg))
+        except Exception as exc:
+            log.error('Loading package "%s" raised exception %s : %s' % (
+                file, type(exc).__name__, exc))
 
 #
 # C.5.1 Document Class
@@ -34,10 +26,13 @@ class documentclass(PackageLoader):
     extension = '.cls'
     def invoke(self, tex):
         a = self.parse(tex)
+        at_catcode = self.ownerDocument.context.whichCode('@')
+        self.ownerDocument.context.catcode('@', Token.CC_LETTER)
         self.load(tex, a['name'], a['options'])
         packages = self.ownerDocument.context.packages
         if a['name'] in list(packages.keys()):
             packages['documentclass'] = packages[a['name']]
+        self.ownerDocument.context.catcode('@', at_catcode)
 
 class documentstyle(documentclass):
     pass
@@ -55,9 +50,6 @@ class columnsep(DimenCommand):
 class columnseprule(DimenCommand):
     value = DimenCommand.new(0)
 
-class mathindent(DimenCommand):
-    value = DimenCommand.new(0)
-
 #
 # C.5.2 Packages
 #
@@ -71,8 +63,11 @@ class usepackage(PackageLoader):
         self.ownerDocument.context.catcode('&', Token.CC_LETTER)
         a = self.parse(tex)
         self.ownerDocument.context.catcode('&', catcode)
+        at_catcode = self.ownerDocument.context.whichCode('@')
+        self.ownerDocument.context.catcode('@', Token.CC_LETTER)
         for fname in a['names']:
             self.load(tex, fname, a['options'])
+        self.ownerDocument.context.catcode('@', at_catcode)
 
 class RequirePackage(usepackage):
     pass
@@ -143,9 +138,6 @@ class marginparsep(DimenCommand):
 
 class marginparwidth(DimenCommand):
     value = DimenCommand.new('0.75in')
-
-class topskip(DimenCommand):
-    value = DimenCommand.new(0)
 
 #
 # C.5.4 The Title Page and Abstract

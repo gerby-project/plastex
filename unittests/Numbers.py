@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import unittest, sys
 from unittest import TestCase
 from plasTeX.Tokenizer import *
@@ -224,6 +222,36 @@ class Parameters(TestCase):
         foo = t.ownerDocument.context['foo'].value
         baselineskip = t.ownerDocument.context['baselineskip'].value
         assert foo == (-4*baselineskip), '"%s" != "%s"' % (foo, (-4*baselineskip))
+
+    def testRomanNumeral(self):
+        t = TeX()
+        t.input(r'\romannumeral5')
+        p = t.parse()
+        assert ''.join(p) == 'v'
+
+    def testNumberSection(self):
+        t = TeX()
+        t.input(r'''
+\documentclass{article}
+\begin{document}
+\section{}
+\section{}
+\number\thesection
+\end{document}
+''')
+        assert t.parse().textContent.strip() == '2'
+
+    def testRomanNumeralSection(self):
+        t = TeX()
+        t.input(r'''
+\documentclass{article}
+\begin{document}
+\section{}
+\section{}
+\romannumeral\thesection
+\end{document}
+''')
+        assert t.parse().textContent.strip() == 'ii'
 
 if __name__ == '__main__':
     unittest.main()

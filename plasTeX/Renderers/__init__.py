@@ -1,11 +1,9 @@
-#!/usr/bin/env python
-
 import os, shutil, string, importlib
 from plasTeX.Filenames import Filenames
 from plasTeX.DOM import Node
 from plasTeX.Logging import getLogger
 from plasTeX.Imagers import Image, PILImage
-import collections
+import collections.abc
 
 log = getLogger()
 status = getLogger('status')
@@ -137,7 +135,7 @@ class Renderable(object):
             if child.filename:
                 # Force footnotes to be cached
                 if hasattr(child, 'footnotes'):
-                    child.footnotes
+                    _ = child.footnotes
 
                 status.info(' [ %s ', child.filename)
 
@@ -231,7 +229,8 @@ class Renderable(object):
     def vectorImage(self):
         """ Generate a vector image and return the image filename """
         image = Node.renderer.vectorImager.getImage(self)
-        image.bitmap = Node.renderer.imager.getImage(self)
+        if Node.renderer.vectorBitmap:
+            image.bitmap = Node.renderer.imager.getImage(self)
         return image
 
     @property
@@ -301,8 +300,7 @@ class Renderable(object):
             if not hasattr(self, 'config'):
                 return
 
-            level = getattr(self, 'splitlevel',
-                            self.config['files']['split-level'])
+            level = getattr(self, 'splitlevel', r.level)
 
             # If our level doesn't invoke a split, don't return a filename
             if self.level > level:
@@ -318,6 +316,16 @@ class Renderable(object):
                     ns['title'] = self.title.textContent
                 elif isinstance(self.title, str):
                     ns['title'] = self.title
+            if hasattr(self, 'ref'):
+                ref = ''
+                if hasattr(self.ref, 'textContent'):
+                    ref = self.ref.textContent
+                elif isinstance(self.ref, str):
+                    ref = self.ref
+                if ref:
+                    ns['ref'] = ref
+            if self.nodeName:
+                ns['name'] = self.nodeName
             r.files[self] = filename = r.newFilename()
 
 #       print type(self), filename
@@ -342,10 +350,10 @@ class Renderer(dict):
     """
 
     renderableClass = Renderable
-    renderMethod = None
     textDefault = str
     default = str
     outputType = str
+    vectorBitmap = True
     imageTypes = []
     vectorImageTypes = []
     fileExtension = ''
@@ -379,7 +387,7 @@ class Renderer(dict):
 
         """
         # Using the side-effect of the filename property
-        node.filename
+        _ = node.filename
         for child in node.childNodes:
             self.cacheFilenames(child)
 
@@ -397,6 +405,11 @@ class Renderer(dict):
         """
         config = document.config
 
+        self.level = config["files"]["split-level"]
+        filenameTemplate = config["files"]["filename"].strip()
+        if ' ' not in filenameTemplate and '[' not in filenameTemplate:
+            self.level = -10
+
         # If there are no keys, print a warning.
         # This is most likely a problem.
         if not list(self.keys()):
@@ -408,7 +421,7 @@ class Renderer(dict):
         Node.renderer = self
 
         # Create a filename generator
-        self.newFilename = Filenames(config['files'].get('filename', raw=True),
+        self.newFilename = Filenames(config['files'].get('filename'),
                                      (config['files']['bad-chars'],
                                       config['files']['bad-chars-sub']),
                                      {'jobname':document.userdata.get('jobname', '')}, self.fileExtension)
@@ -433,7 +446,7 @@ class Renderer(dict):
             elif name == 'OSXCoreGraphics':
                 from plasTeX.Imagers.OSXCoreGraphics  import Imager
             else:
-                log.warning("Could not load imager '%s' because '%s'" % (name, msg))
+                log.warning("Invalid imager '%s'" % name)
                 continue
 
             self.imager = Imager(document, self.imageTypes)
@@ -442,6 +455,8 @@ class Renderer(dict):
             if self.imager.verify():
                 log.info('Using the imager "%s".' % name)
                 break
+            else:
+                self.imager = None
 
         # Still no imager? Just use the default.
         if self.imager is None:
@@ -462,13 +477,15 @@ class Renderer(dict):
         for name in names:
             if name == 'none':
                 break
-            try:
-                exec('from plasTeX.Imagers.%s import Imager' % name)
-            except ImportError as msg:
-                log.warning("Could not load imager '%s' because '%s'" % (name, msg))
+            elif name == 'dvisvgm':
+                from plasTeX.Imagers.dvisvgm import Imager as VectorImager
+            elif name == 'pdf2svg':
+                from plasTeX.Imagers.pdf2svg import Imager as VectorImager
+            else:
+                log.warning("Invalid imager '%s'" % name)
                 continue
 
-            self.vectorImager = Imager(document, self.vectorImageTypes)
+            self.vectorImager = VectorImager(document, self.vectorImageTypes)
 
             # Make sure that this imager works on this machine
             if self.vectorImager.verify():
@@ -493,12 +510,8 @@ class Renderer(dict):
             self.vectorImager.imageUnits = self.imageUnits
 
         # Invoke the rendering process
-        if type(self).renderMethod:
-            getattr(document, type(self).renderMethod)()
-        else:
-            str(document)
+        str(document)
 
-        # Finish rendering images
         self.imager.close()
         self.vectorImager.close()
 
@@ -554,7 +567,7 @@ class Renderer(dict):
                 continue
 
             s = self.processFileContent(document, s)
-            if isinstance(postProcess, collections.Callable):
+            if isinstance(postProcess, collections.abc.Callable):
                 s = postProcess(document, s)
 
             with open(f, 'w', encoding=encoding) as fd:

@@ -1,18 +1,15 @@
-#!/usr/bin/env python
-
 """
 C.9 Figures and Other Floating Bodies (p196)
 
 """
 
-from plasTeX import Command, Environment, subclasses
+from plasTeX import Command, Environment
 from plasTeX import GlueCommand, DimenCommand
-from plasTeX.Logging import getLogger
 from plasTeX.Base.LaTeX.Arrays import Array
 
 
 class Caption(Command):
-    args = '[ toc ] self'
+    args = '* [ toc ] self'
     blockType = True
     # Is the caption attached to an object?
     attached = False
@@ -141,12 +138,6 @@ class normalmarginpar(Command):
     pass
 
 # Style Parameters
-
-class marginparwidth(DimenCommand):
-    value = DimenCommand.new(0)
-
-class marginparsep(DimenCommand):
-    value = DimenCommand.new(0)
 
 class marginparpush(DimenCommand):
     value = DimenCommand.new(0)

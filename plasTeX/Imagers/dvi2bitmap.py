@@ -1,5 +1,4 @@
-#!/usr/bin/env python
-
+import plasTeX.Imagers
 from plasTeX.Imagers import Imager as _Imager
 
 class DVI2Bitmap(_Imager):
@@ -10,7 +9,7 @@ class DVI2Bitmap(_Imager):
     fileExtension = '.png'
 
     def writePreamble(self, document):
-        plasTeX.Imagers.Imager.writePreamble(self, document)
+        _Imager.writePreamble(self, document)
         self.source.write('\\special{dvi2bitmap default imageformat png}\n')
         self.source.write('\\special{dvi2bitmap default unit pixels}\n')
 

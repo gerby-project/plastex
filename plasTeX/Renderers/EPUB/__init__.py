@@ -1,6 +1,6 @@
 import plasTeX
 from plasTeX.TeX import TeX
-from plasTeX.Config import config
+from plasTeX.Config import defaultConfig
 from plasTeX.ConfigManager import *
 from plasTeX.Renderers.XHTML import Renderer as XHTMLRenderer
 from plasTeX.Renderers.PageTemplate.simpletal import simpleTAL, simpleTALES
@@ -77,9 +77,9 @@ class Epub_Package(object):
             'htmlnames':list(),
             'imagenames':list(),
             })
-        'parse toc data to get html filenames'
+        # parse toc data to get html filenames
         self.get_htmlnames()
-        'parse html filenames to get img and css filenames'
+        # parse html filenames to get img and css filenames
         self.get_image_css_names()
 
     def pack(self):
@@ -263,7 +263,7 @@ class Epub(object):
     def __init__(self, name):
         self.name = name
         self.filename = '%s.tex' % name
-        self.config = config
+        self.config = defaultConfig()
         self.config['general']['renderer'] = 'Epub'
         self.config['general']['theme'] = 'default'
 

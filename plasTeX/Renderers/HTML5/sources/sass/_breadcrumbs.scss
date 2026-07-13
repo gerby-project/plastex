@@ -2,9 +2,8 @@
 
 ul.breadcrumbs
 {
-    margin: 1rem 0 0 0;
+    margin: 0;
     padding: 0;
-    padding-left: .5rem;
 
     list-style: none;
     font-size: small;
@@ -19,7 +18,7 @@ ul.breadcrumbs a
 {
     text-decoration: none;
 
-    color: darken($prevupnext-nav-color, 10%);
+    color: $breadcrumbs-color;
 }
 
 

@@ -1,13 +1,10 @@
-#!/usr/bin/env python
-
 """
 C.3.1 Making Sentences (p170)
 
 """
 
-import time
 from plasTeX import Command, Environment
-from plasTeX.Logging import getLogger
+
 
 #
 # Quotes
@@ -42,12 +39,6 @@ class NoLineBreak(Command):
 class EndOfSentence(Command):
     macroName = '@'
     str = ''
-
-class frenchspacing(Command): 
-    pass
-
-class nonfrenchspacing(Command):
-    pass
 
 #
 # Special characters

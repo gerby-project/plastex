@@ -1,21 +1,20 @@
 name: math
-{{ obj.source }}
+{{ obj.mathjax_source }}
 
-name: ensuremath eqnarray eqnarray* align align* gather gather* flalign flalign* \
-      multline multline* alignat alignat* split DeclareMathOperator
-<span>{{ obj.source }}</span>
+name: ensuremath 
+\({{ obj.mathjax_source }}\)
 
-name: displaymath equation* 
+name: displaymath equation* eqnarray eqnarray* align align* gather gather* flalign flalign* multline multline* alignat alignat* split
 <div class="displaymath" id="{{ obj.id }}">
-  {{ obj.source }}
+  {{ obj.mathjax_source }}
 </div>
 
 name: equation
 <div class="equation" id="{{ obj.id }}">
 <p>
-  <span class="equation_label">{{ obj.ref }}</span>
   <div class="equation_content">
-    {{ obj.source }}
+    {{ obj.mathjax_source }}
   </div>
+  <span class="equation_label">{{ obj.ref }}</span>
 </p>
 </div>

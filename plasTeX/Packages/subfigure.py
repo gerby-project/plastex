@@ -1,11 +1,9 @@
-#!/usr/bin/env python
-
 """
 subfigure package
 
 """
 
-from plasTeX import Command, Environment
+from plasTeX import Command
 
 def ProcessOptions(options, document):
     context = document.context

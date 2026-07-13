@@ -1,12 +1,11 @@
-#!/usr/bin/env python
-
 """
 B.2 Allocation of Registers (p346)
 
 """
 
-from plasTeX import Command, Environment
+from plasTeX import Command
 from plasTeX import DimenCommand, GlueCommand
+
 
 class dimen_(Command):
     macroName = 'dimen'

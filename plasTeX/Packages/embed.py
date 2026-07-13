@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-
-"""
+r"""
 embed package
 
 To use the embed package, include the following code in your latex document.
@@ -34,7 +32,6 @@ after
 
 """
 
-from plasTeX import Command, Environment
 from plasTeX.DOM import Text
 from plasTeX.Base.LaTeX.Verbatim import verbatim
 from plasTeX.Base.LaTeX.Verbatim import verb

@@ -1,12 +1,10 @@
-#!/usr/bin/env python
-
 """
 C.12 Line and Page Breaking (p212)
 
 """
 
-from plasTeX import Command, Environment
-from plasTeX.Logging import getLogger
+from plasTeX import Command
+
 
 #
 # C.12.1

@@ -36,10 +36,11 @@
 
 import logging
 
-import xml.sax, xml.sax.saxutils,html, io, re, types, codecs
+import xml.sax, html, io, re, codecs
 from .. import simpletal
 import copy, sys
 from . import FixedHTMLParser, sgmlentitynames
+
 
 __version__ = simpletal.__version__
 
@@ -49,7 +50,7 @@ try:
     use_lexical_handler = 1
 except ImportError:
     use_lexical_handler = 0
-    class LexicalHandler:
+    class LexicalHandler: # type: ignore # mypy#1153
         pass
 
 try:
@@ -109,8 +110,8 @@ METAL_FILL_SLOT=16
 METAL_DEFINE_MACRO=17
 
 METAL_NAME_REGEX = re.compile ("[a-zA-Z_][a-zA-Z0-9_]*")
-SINGLETON_XML_REGEX = re.compile ('^<[^\s/>]+(?:\s*[^=>]+="[^">]+")*\s*/>')
-SINGLETON_BYTES_XML_REGEX = re.compile (b'^<[^\s/>]+(?:\s*[^=>]+="[^">]+")*\s*/>')
+SINGLETON_XML_REGEX = re.compile (br'^<[^\s/>]+(?:\s*[^=>]+="[^">]+")*\s*/>')
+SINGLETON_BYTES_XML_REGEX = re.compile (br'^<[^\s/>]+(?:\s*[^=>]+="[^">]+")*\s*/>')
 ENTITY_REF_REGEX = re.compile (r'(?:&[a-zA-Z][\-\.a-zA-Z0-9]*[^\-\.a-zA-Z0-9])|(?:&#[xX]?[a-eA-E0-9]*[^0-9a-eA-E])')
 
 # The list of elements in HTML that can not have end tags - done as a dictionary for fast
@@ -693,7 +694,7 @@ class HTMLTemplate (Template):
 		""" This method will write to the outputFile the expanded version of this template.
 			The context passed in is used to resolve all expressions with the template.
 		"""
-		if (isinstance (outputFile, io.TextIOBase) or isinstance (outputFile, codecs.StreamWriter)):
+		if isinstance(outputFile, (io.TextIOBase, codecs.StreamWriter)):
 			self.log.debug ("Text based output file detected")
 		else:
 			self.log.debug ("Bytes based output file detected - wrapping in codec for %s", outputEncoding)
@@ -722,7 +723,7 @@ class XMLTemplate (Template):
 			the expanded version of this template.  The context passed in is used to resolve
 			all expressions with the template.
 		"""
-		if (isinstance (outputFile, io.TextIOBase) or isinstance (outputFile, codecs.StreamWriter)):
+		if isinstance(outputFile, (io.TextIOBase, codecs.StreamWriter)):
 			self.log.debug ("Text based output file detected")
 		else:
 			self.log.debug ("Bytes based output file detected - wrapping in codec for %s", outputEncoding)
@@ -826,7 +827,7 @@ class TemplateCompiler:
 		return template
 
 	def addCommand (self, command):
-		if (command[0] == TAL_OUTPUT and (len (self.commandList) > 0) and self.commandList[-1][0] == TAL_OUTPUT):
+		if command[0] == TAL_OUTPUT and self.commandList and self.commandList[-1][0] == TAL_OUTPUT:
 			# We can combine output commands
 			self.commandList[-1] = (TAL_OUTPUT, self.commandList[-1][1] + command[1])
 		else:
@@ -870,7 +871,7 @@ class TemplateCompiler:
 				end tags, this flag allows the template compiler to specify that these
 				should not be output.
 		"""
-		while (len (self.tagStack) > 0):
+		while self.tagStack:
 			oldTag, tagProperties, useMacroLocation = self.tagStack.pop()
 			endTagSymbol = tagProperties.get ('endTagSymbol', None)
 			popCommandList = tagProperties.get ('popFunctionList', [])
@@ -955,7 +956,7 @@ class TemplateCompiler:
 				prefix = att[6:]
 				if (value == METAL_NAME_URI):
 					# It's a METAL namespace declaration
-					if (len (prefix) > 0):
+					if prefix:
 						self.metal_namespace_prefix_stack.append (self.metal_namespace_prefix)
 						self.setMETALPrefix (prefix)
 						# We want this function called when the scope ends
@@ -966,7 +967,7 @@ class TemplateCompiler:
 						raise TemplateParseException (self.tagAsText (self.currentStartTag), msg)
 				elif (value == TAL_NAME_URI):
 					# TAL this time
-					if (len (prefix) > 0):
+					if prefix:
 						self.tal_namespace_prefix_stack.append (self.tal_namespace_prefix)
 						self.setTALPrefix (prefix)
 						# We want this function called when the scope ends
@@ -1086,7 +1087,7 @@ class TemplateCompiler:
 		# Compile a condition command, resulting argument is:
 		# path, endTagSymbol
 		# Sanity check
-		if (len (argument) == 0):
+		if not argument:
 			# No argument passed
 			msg = "No argument passed!  condition commands must be of the form: 'path'"
 			self.log.error (msg)
@@ -1113,7 +1114,7 @@ class TemplateCompiler:
 		# (replaceFlag, structureFlag, expression, endTagSymbol)
 
 		# Sanity check
-		if (len (argument) == 0):
+		if not argument:
 			# No argument passed
 			msg = "No argument passed!  content/replace commands must be of the form: 'path'"
 			self.log.error (msg)
@@ -1121,7 +1122,7 @@ class TemplateCompiler:
 
 		structureFlag = 0
 		attProps = argument.split (' ')
-		if (len(attProps) > 1):
+		if attProps:
 			if (attProps[0] == "structure"):
 				structureFlag = 1
 				express = " ".join (attProps[1:])
@@ -1165,7 +1166,7 @@ class TemplateCompiler:
 		# Compile a condition command, resulting argument is:
 		# path
 		# If no argument is given then set the path to default
-		if (len (argument) == 0):
+		if not argument:
 			expression = "default"
 		else:
 			expression = argument
@@ -1174,7 +1175,7 @@ class TemplateCompiler:
 	# METAL compilation commands go here
 	def compileMetalUseMacro (self, argument):
 		# Sanity check
-		if (len (argument) == 0):
+		if not argument:
 			# No argument passed
 			msg = "No argument passed!  use-macro commands must be of the form: 'use-macro: path'"
 			self.log.error (msg)
@@ -1184,7 +1185,7 @@ class TemplateCompiler:
 		return cmnd
 
 	def compileMetalDefineMacro (self, argument):
-		if (len (argument) == 0):
+		if not argument:
 			# No argument passed
 			msg = "No argument passed!  define-macro commands must be of the form: 'define-macro: name'"
 			self.log.error (msg)
@@ -1206,7 +1207,7 @@ class TemplateCompiler:
 		return None
 
 	def compileMetalFillSlot (self, argument):
-		if (len (argument) == 0):
+		if not argument:
 			# No argument passed
 			msg = "No argument passed!  fill-slot commands must be of the form: 'fill-slot: name'"
 			self.log.error (msg)
@@ -1257,7 +1258,7 @@ class TemplateCompiler:
 		return None
 
 	def compileMetalDefineSlot (self, argument):
-		if (len (argument) == 0):
+		if not argument:
 			# No argument passed
 			msg = "No argument passed!  define-slot commands must be of the form: 'name'"
 			self.log.error (msg)

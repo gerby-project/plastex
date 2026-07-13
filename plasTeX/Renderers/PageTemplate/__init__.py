@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """
 Generic Page Template Renderer
 
@@ -11,6 +9,7 @@ support for your own templating engines.
 
 import sys, os, re, plasTeX, shutil, string
 from io import StringIO
+import pdb
 from plasTeX.Renderers import Renderer as BaseRenderer
 from plasTeX.Renderers.PageTemplate.simpletal import simpleTAL, simpleTALES
 from plasTeX.Renderers.PageTemplate.simpletal.simpleTALES import Context as TALContext
@@ -18,8 +17,9 @@ from plasTeX.Renderers.PageTemplate.simpletal.simpleTALES import Context as TALC
 log = plasTeX.Logging.getLogger()
 
 # Support for Jinja2 templates
-try: 
-    from jinja2 import Environment, contextfunction
+try:
+    from jinja2 import Environment
+    import jinja2.exceptions
 except ImportError:
     def jinja2template(s, encoding='utf8'):
         def renderjinja2(obj):
@@ -27,12 +27,18 @@ except ImportError:
         return renderjinja2
 else:
     try:
-        import ipdb as pdb
+        from jinja2 import pass_context
     except ImportError:
-        import pdb
-        
-    @contextfunction
+        from jinja2 import contextfunction as pass_context  # type: ignore
+
+    import jinja2.exceptions
+    @pass_context
     def debug(context):
+        obj = context["obj"]
+        config = context["config"]
+        print("\n\nWill now start a debugger in the context of the following template:\n")
+        print(context['tpl_src'])
+        print("\nYou can inspect obj and config.\n")
         pdb.set_trace()
 
     def jinja2template(s, encoding='utf8'):
@@ -40,15 +46,24 @@ else:
         env.globals['debug'] = debug
 
         def renderjinja2(obj, s=s):
-            tvars = {'here':obj, 
+            tvars = {'here':obj,
                      'obj':obj,
+                     'doc':obj.ownerDocument,
                      'container':obj.parentNode,
                      'config':obj.ownerDocument.config,
                      'context':obj.ownerDocument.context,
-                     'templates':obj.renderer}
+                     'templates':obj.renderer,
+                     'tpl_src': s}
 
             tpl = env.from_string(s)
-            return tpl.render(tvars) 
+            try:
+                return tpl.render(tvars)
+            except jinja2.exceptions.TemplateError as e:
+                log.warning('Jinja2 template error: {} while rendering node {}'
+                            ' with source\n {}\n'.format(
+                            e, obj.nodeName, obj.source))
+                return ''
+
 
         return renderjinja2
 
@@ -341,6 +356,7 @@ class PageTemplate(BaseRenderer):
             # Store theme location
             themes.append(os.path.join(cwd, 'Themes', themename))
 
+
             # Load templates configured by the environment variable
             templates = os.environ.get('%sTEMPLATES' % cls.__name__,'')
             for path in [x.strip() for x in templates.split(os.pathsep) if x.strip()]:
@@ -348,11 +364,19 @@ class PageTemplate(BaseRenderer):
                 self.importDirectory(path)
                 themes.append(os.path.join(path, 'Themes', themename))
 
+        working_dir = document.userdata.get('working-dir', '')
+        # Load templates configured by the extra-templates option
+        for path in document.config['general']['extra-templates']:
+            full_path = os.path.join(working_dir, path)
+            log.info('Importing templates from %s' % full_path)
+            self.importDirectory(full_path)
+            themes.append(os.path.join(path, 'Themes', themename))
         # Load only one theme
         for theme in reversed(themes):
-            if os.path.isdir(theme):
-                log.info('Importing templates from %s' % theme)
-                self.importDirectory(theme)
+            full_path = os.path.join(working_dir, theme)
+            if os.path.isdir(full_path):
+                log.info('Using theme %s' % theme)
+                self.importDirectory(full_path)
                 self.loadedTheme = theme
 
                 extensions = []
@@ -362,7 +386,7 @@ class PageTemplate(BaseRenderer):
                 if document.config['general']['copy-theme-extras']:
                     # Copy all theme extras
                     cwd = os.getcwd()
-                    os.chdir(theme)
+                    os.chdir(full_path)
                     for item in os.listdir('.'):
                         if os.path.isdir(item):
                             if not os.path.isdir(os.path.join(cwd,item)):
@@ -381,7 +405,7 @@ class PageTemplate(BaseRenderer):
 
     def importDirectory(self, templatedir):
         """
-        Compile all ZPT files in the given directory
+        Compile all templates files in the given directory
 
         Templates can exist in two different forms.  First, a template
         can be a file unto itself.  If an XML template is desired,
@@ -415,7 +439,7 @@ class PageTemplate(BaseRenderer):
                 singleenames[i] = key[0]
 
         if templatedir and os.path.isdir(templatedir):
-            files = os.listdir(templatedir)
+            files = sorted(os.listdir(templatedir))
 
             # Compile multi-pt files first
             for f in files:
@@ -524,45 +548,45 @@ class PageTemplate(BaseRenderer):
         defaults = options.copy()
         name = None
         if not options or 'name' not in options:
-            f = open(filename, 'r')
-            for i, line in enumerate(f):
-                # Found a meta-data command
-                if re.match(r'(default-)?\w+:', line):
+            with open(filename, 'r') as f:
+                for i, line in enumerate(f):
+                    # Found a meta-data command
+                    if re.match(r'(default-)?\w+:', line):
 
-                    # Purge any awaiting templates
-                    if template:
-                        try:
-                            num_templates += 1
-                            self.setTemplate(''.join(template), options)
-                        except ValueError as msg:
-                            print('ERROR: %s at line %s in file %s' % (msg, i, filename))
-                        options = defaults.copy()
-                        template = []
+                        # Purge any awaiting templates
+                        if template:
+                            try:
+                                num_templates += 1
+                                self.setTemplate(''.join(template), options)
+                            except ValueError as msg:
+                                print('ERROR: %s at line %s in file %s' % (msg, i, filename))
+                            options = defaults.copy()
+                            template = []
 
-                    # Done purging previous template, start a new one
-                    name, value = line.split(':', 1)
-                    name = name.strip()
-                    value = value.rstrip()
-                    while value.endswith('\\'):
-                        value = value[:-1] + ' '
-                        for line in f:
-                            value += line.rstrip()
-                            break
+                        # Done purging previous template, start a new one
+                        name, value = line.split(':', 1)
+                        name = name.strip()
+                        value = value.rstrip()
+                        while value.endswith('\\'):
+                            value = value[:-1] + ' '
+                            for line in f:
+                                value += line.rstrip()
+                                break
 
-                    value = re.sub(r'\s+', r' ', value.strip())
-                    if name.startswith('default-'):
-                        name = name.split('-')[-1]
-                        defaults[name] = value
-                        if name not in options or num_templates == 0:
+                        value = re.sub(r'\s+', r' ', value.strip())
+                        if name.startswith('default-'):
+                            name = name.split('-')[-1]
+                            defaults[name] = value
+                            if name not in options or num_templates == 0:
+                                options[name] = value
+                        else:
                             options[name] = value
-                    else:
-                        options[name] = value
-                    continue
+                        continue
 
-                if template or (not(template) and line.strip()):
-                    template.append(line)
-                elif not(template) and 'name' in options:
-                    template.append('')
+                    if template or (not(template) and line.strip()):
+                        template.append(line)
+                    elif not(template) and 'name' in options:
+                        template.append('')
 
         else:
             with open(filename, encoding='utf-8') as f:
@@ -590,7 +614,7 @@ class PageTemplate(BaseRenderer):
                 if ord(item) > 127:
                     s[i] = '&#%.3d;' % ord(item)
             s = ''.join(s)
-        
+
         return BaseRenderer.processFileContent(self, document, s)
 
     def setImageData(self, m):

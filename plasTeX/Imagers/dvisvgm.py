@@ -1,34 +1,38 @@
-#!/usr/bin/env python
+import subprocess
+from pathlib import Path
+from plasTeX.Imagers import VectorImager as _Imager
+from typing import List, Tuple, Optional
 
-import os, re, glob
-from plasTeX.Imagers import Imager as _Imager
-
-class DVISVGM(_Imager.VectorImager):
+class DVISVGM(_Imager):
     """ Imager that uses dvisvgm """
     fileExtension = '.svg'
-    verification = 'dvisvgm --help'
+    verifications = ['dvisvgm --help', 'latex --help']
     compiler = 'latex'
 
-    def executeConverter(self, output):
-        rc = 0
-        open('images.dvi', 'w').write(output.read())
-        page = 1
-        while 1:
-            filename = 'img%d.svg' % page
-            rc = os.system('dvisvgm --exact --scale=1.6 --no-fonts --output=%s --page=%d images.dvi' % (filename, page))
-            if rc:
-                break
+    def executeConverter(self, outfile=None) -> List[Tuple[str, str]]:
+        if outfile is None:
+            outfile = self.tmpFile.with_suffix('.dvi').name
 
-            # dvisvgm always puts "-<page-number>" on each file.  Get rid of it.
-            try: os.rename(glob.glob(filename+'-*')[0], filename)
-            except IndexError: break
+        default_scale = self.config["images"]["scale-factor"]
 
-            if not open(filename).read().strip():
-                os.remove(filename)
-                break
-            page += 1
-            if page > len(self.images):
-                break
-        return rc, None
+        images = []
+        with open("images.csv") as fh:
+            for no, line in enumerate(fh.readlines()):
+                out = 'img%d.svg' % no
+                page, output, scale_str = line.split(",")
+                scale = float(scale_str.strip()) or default_scale
+                images.append((out, output.rstrip()))
+
+                rc = subprocess.run([
+                    "dvisvgm",
+                    "--exact",
+                    "--scale={}".format(scale),
+                    "--no-fonts",
+                    "--output={}".format(out),
+                    "--page={}".format(page),
+                    outfile
+                ], stdout=subprocess.DEVNULL, check=True)
+
+        return images
 
 Imager = DVISVGM

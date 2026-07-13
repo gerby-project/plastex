@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-
-from plasTeX import Command, Environment
+from plasTeX import Environment
 
 class textblock(Environment):
     args = 'hsize ( pos )'

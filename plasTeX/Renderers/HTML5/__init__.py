@@ -1,36 +1,32 @@
-#!/usr/bin/env python
-
 import subprocess, shlex
 import os, shutil, re
+from pathlib import Path
+from typing import IO
 from plasTeX.Renderers.PageTemplate import Renderer as _Renderer
-from plasTeX.Renderers import Renderer as BaseRenderer
+from plasTeX.Renderers.HTML5.Config import addConfig
 from plasTeX.Logging import getLogger
 
 log = getLogger()
 
 class HTML5(_Renderer):
-    """ Renderer for HTML5 documents, heavily copied from XHTML renderer """
+    """Renderer targetting HTML5."""
 
     fileExtension = '.html'
     imageTypes = ['.svg', '.png','.jpg','.jpeg','.gif']
     vectorImageTypes = ['.svg']
+    vectorBitmap = False
 
     def loadTemplates(self, document):
         """Load templates as in PageTemplate but also look for packages that
         want to override some templates and handles extra css and javascript."""
 
-        try:
-            import jinja2
-        except ImportError:
-            log.error('Jinja2 is not available, hence the HTML5 renderer cannot be used.')
-
         _Renderer.loadTemplates(self, document)
-        rendererdata = document.rendererdata['html5'] = dict()
+        rendererdata = document.rendererdata.setdefault('html5', dict())
         config = document.config
+        if 'html5' not in config:
+            addConfig(config)
 
-        rendererDir = os.path.dirname(__file__)
-
-        srcDir = document.userdata['working-dir']
+        srcDir = document.userdata.get('working-dir', '.') # type: str
         buildDir = os.getcwd()
 
         # Theme css has already been copied by PageTemplate.loadTemplates,
@@ -57,12 +53,15 @@ class HTML5(_Renderer):
             pass
 
         # Start building the js list for use by the layout template
-        if (config['html5']['use-theme-js'] and 
-                config['general']['copy-theme-extras']):
-            rendererdata['js'] = sorted(
-                    os.listdir(os.path.join(self.loadedTheme, 'js')))
-        else:
-            rendererdata['js'] = []
+        if self.loadedTheme:
+            theme_js_path = Path(self.loadedTheme)/'js'
+            if (config['html5']['use-theme-js'] and
+                    config['general']['copy-theme-extras'] and
+                    theme_js_path.exists()):
+                rendererdata['js'] = sorted(path.name
+                        for path in theme_js_path.glob('*.js'))
+            else:
+                rendererdata['js'] = []
 
         for resrc in document.packageResources:
             # Next line may load templates or change
@@ -71,19 +70,29 @@ class HTML5(_Renderer):
                     renderer=self,
                     rendererName='html5',
                     document=document,
-                    target=buildDir)
+                    target=Path(buildDir))
 
         # Last loaded files (hence overriding everything else) come from user
         # configuration
         cssBuildDir = os.path.join(buildDir, 'styles')
         for css in config['html5']['extra-css']:
             rendererdata['css'].append(css)
-            shutil.copy(os.path.join(srcDir, css), cssBuildDir)
+            try:
+                shutil.copy(os.path.join(srcDir, css), cssBuildDir)
+            except FileNotFoundError:
+                log.error('File ' + css + ' not found')
+            except IOError as err:
+                log.error(str(err))
 
         jsBuildDir = os.path.join(buildDir, 'js')
         for js in config['html5']['extra-js']:
             rendererdata['js'].append(js)
-            shutil.copy(os.path.join(srcDir, js), jsBuildDir)
+            try:
+                shutil.copy(os.path.join(srcDir, js), jsBuildDir)
+            except FileNotFoundError:
+                log.error('File ' + js + ' not found')
+            except IOError as err:
+                log.error(str(err))
 
     def processFileContent(self, document, s):
         s = _Renderer.processFileContent(self, document, s)

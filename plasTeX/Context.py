@@ -1,14 +1,21 @@
-#!/usr/bin/env python
-
-from plasTeX import ismacro, macroName
-from plasTeX.DOM import Node
-from plasTeX.Logging import getLogger
-from plasTeX.Tokenizer import Tokenizer, Token, DEFAULT_CATEGORIES, VERBATIM_CATEGORIES
+import sys
 import os
 import configparser
+import contextlib
 import re
 import time
+from pathlib import Path
+from typing import Optional, Dict, List
+from importlib import import_module
+from importlib.util import find_spec
+
+from plasTeX import ismacro, macroName
+from plasTeX.TeX import TeX
+from plasTeX.Logging import getLogger
+from plasTeX.Base.TeX.Primitives import relax
+from plasTeX.Tokenizer import Tokenizer, Token, DEFAULT_CATEGORIES, VERBATIM_CATEGORIES
 import plasTeX
+import plasTeX.Packages
 
 # Only export the Context singleton
 __all__ = ['Context']
@@ -28,7 +35,8 @@ class ContextItem(dict):
 
     def __init__(self, data=None):
         dict.__init__(self, data or {})
-        self.categories = None
+        self.categories = None # type: Optional[List[str]]
+        self.lets = {}
         self.obj = None
         self.parent = None
         self.owner = None
@@ -176,9 +184,6 @@ class Context(object):
         self.counters = Counters()
         self.counters.context = self
 
-        # Tokens aliased by \let
-        self.lets = {}
-
         # Imported packages and their options
         self.packages = {}
 
@@ -207,20 +212,22 @@ class Context(object):
         if load:
             self.loadBaseMacros()
 
-    def currenvir():
-        def fget(self):
-            if self._currenvir:
-                return self._currenvir[-1]
-            return
-        def fset(self, value):
-            if value is None:
-                self._currenvir.pop()
-            else:
-                self._currenvir.append(value)
-        def fdel(self):
+    @property
+    def currenvir(self):
+        if self._currenvir:
+            return self._currenvir[-1]
+        return
+
+    @currenvir.setter
+    def currenvir(self, value):
+        if value is None:
             self._currenvir.pop()
-        return locals()
-    currenvir = property(**currenvir())
+        else:
+            self._currenvir.append(value)
+
+    @currenvir.deleter
+    def currenvir(self):
+        self._currenvir.pop()
 
     def persist(self, filename, rtype='none'):
         """
@@ -238,9 +245,10 @@ class Context(object):
         import pickle
         if os.path.exists(filename):
             try:
-                d = pickle.load(open(filename, 'rb'))
-                if rtype not in list(d.keys()):
-                    d[rtype] = {}
+                with open(filename, 'rb') as fh:
+                    d = pickle.load(fh)
+                    if rtype not in list(d.keys()):
+                        d[rtype] = {}
             except:
                 os.remove(filename)
                 d = {rtype:{}}
@@ -250,7 +258,8 @@ class Context(object):
         for key, value in list(self.persistentLabels.items()):
             data[key] = value.persist()
         try:
-            pickle.dump(d, open(filename, 'wb'))
+            with open(filename, 'wb') as fh:
+                pickle.dump(d, fh)
         except Exception as msg:
             log.warning('Could not save auxiliary information. (%s)' % msg)
 
@@ -308,7 +317,7 @@ class Context(object):
         """
 
         if not self.languages:
-            files = document.config['document']['lang-terms'].split(os.pathsep)
+            files = document.config['document']['lang-terms']
             files.append(os.path.join(os.path.dirname(__file__), 'i18n.xml'))
 
             LanguageParser(self.languages).parse(reversed(files))
@@ -374,18 +383,18 @@ class Context(object):
                                                 {'args': value})
             self.importMacros(macros)
 
-    def loadPackage(self, tex, file, options=None):
+    def loadPythonPackage(self, document: plasTeX.TeXDocument, file_name: str, options: Optional[Dict] = None) -> bool:
         """
-        Load a Python or LaTeX package
+        Load a Python package
 
-        A Python version of the package is searched for first,
-        if one cannot be found then a LaTeX version of the package
-        is searched for.
+        Packages are first searched for in
+        the directories of config['general']['packages-dirs'], then
+        in plugins listed in config['general']['plugins'], and then
+        among builtin packages.
 
         Required Arguments:
-        tex -- the instance of the TeX engine to use for parsing
-            the LaTeX file, if needed.
-        file -- the name of the file to load
+        document -- the document currently being built.
+        file_name -- the name of the file to load
 
         Keyword Arguments:
         options -- the options given on the macro to pass to the package
@@ -394,46 +403,156 @@ class Context(object):
         boolean indicating whether or not the package loaded successfully
 
         """
+        config = document.config
+        working_dir = document.userdata.get('working-dir', '')
         options = options or {}
-        module = os.path.splitext(file)[0]
+        module = os.path.splitext(file_name)[0]
         # See if it has already been loaded
-        if module in list(self.packages.keys()):
+        if module in self.packages:
             return True
 
         packagesini = os.path.join(os.path.dirname(plasTeX.Packages.__file__),
                                    os.path.basename(module) + '.ini')
 
-        try:
-            # Try to import a Python package by that name
-            m = __import__(module, globals(), locals())
-            status.info(' ( %s ' % m.__file__)
-            if hasattr(m, 'ProcessOptions'):
-                m.ProcessOptions(options, tex.ownerDocument)
+        imported = None
+        # temporarily adjust the path for importing plugins
+        orig_sys_path = sys.path
+        with contextlib.ExitStack() as stack:
+            @stack.callback
+            def _reset_sys_path():
+                sys.path = orig_sys_path
 
-            self.importMacros(vars(m))
-            moduleini = os.path.splitext(m.__file__)[0] + '.ini'
+            for pkg_dir in config['general']['packages-dirs']:
+                if Path(pkg_dir).is_absolute():
+                    path = Path(pkg_dir)
+                else:
+                    path = (Path(working_dir)/pkg_dir).absolute()
+
+                pypath = (path/module).with_suffix('.py')
+                if not pypath.exists():
+                    continue
+                if str(path) not in sys.path:
+                    sys.path.insert(0, str(path))
+                spec = find_spec(module)
+                if spec is None:
+                    sys.path = orig_sys_path
+                    continue
+                if module in sys.modules and spec.origin != str(pypath):
+                    log.warning('Python has already loaded a module named {} '
+                            ' from {}, so we cannot load it from {}. '
+                            'You can fix this by creating a '
+                            'plugin.'.format(module, spec.origin, pkg_dir))
+                    break
+
+                imported = import_module(module)
+                break
+
+            if imported is None:
+                for plugin in reversed(config['general']['plugins']):
+                    sys.path = orig_sys_path
+                    plugin_module = import_module(plugin)
+                    assert plugin_module.__file__
+                    if not (Path(plugin_module.__file__).parent/'Packages').exists():
+                        continue
+                    p_ = str(Path(plugin_module.__file__).parent.parent)
+                    if p_ not in sys.path:
+                        sys.path.insert(0, p_)
+                    try:
+                        imported = import_module(plugin + '.Packages.' + module)
+                        break
+                    except (ImportError, ModuleNotFoundError) as msg:
+                        # No Python module
+                        if 'No module' in str(msg) and module in str(msg):
+                            pass
+                            # Failed to load Python package
+                        # Error while importing
+                        else:
+                            raise
+
+            if imported is None:
+                # Now try builtin plasTeX packages
+                p_ = str(Path(__file__).parent.parent)
+                if p_ not in sys.path:
+                    sys.path.insert(0, p_)
+                try:
+                    imported = import_module('plasTeX.Packages.' + module)
+                except (ImportError, ModuleNotFoundError) as msg:
+                    # No Python module
+                    if 'No module' in str(msg) and module in str(msg):
+                        pass
+                        # Failed to load Python package
+                    # Error while importing
+                    else:
+                        raise
+
+        if imported:
+            status.info(' (loading package %s ' % imported.__file__)
+            if hasattr(imported, 'ProcessOptions'):
+                imported.ProcessOptions(options, document) # type: ignore
+            assert imported.__file__
+            self.importMacros(vars(imported))
+            moduleini = os.path.splitext(imported.__file__)[0] + '.ini'
             self.loadINIPackage([packagesini, moduleini])
             self.packages[module] = options
             status.info(' ) ')
             return True
+        else:
+            return False
 
-        except ImportError as msg:
-            log.warning('No Python version of %s was found' % file)
-            # No Python module
-            if 'No module' in str(msg) and module in str(msg):
-                pass
-                # Failed to load Python package
-            # Error while importing
-            else:
-                raise
+    def loadPackage(self, tex: TeX, file_name: str, options: Optional[Dict] = None) -> bool:
+        """
+        Load a Python or LaTeX package
 
-        result = tex.loadPackage(file, options)
-        try:
-            moduleini = os.path.join(os.path.dirname(tex.kpsewhich(file)),
-                                     os.path.basename(module) + '.ini')
-            self.loadINIPackage([packagesini, moduleini])
-        except OSError: pass
-        return result
+        A Python version of the package is searched for first,
+        if one cannot be found then a LaTeX version of the package
+        is searched for if config['general']['load-tex-packages']
+        is True, or the package has been white-listed in
+        config['general']['tex-packages'].
+
+        Python versions are first searched for in
+        the directories of config['general']['packages-dirs'], then
+        in plugins listed in config['general']['plugins'], and then
+        among builtin packages.
+
+        Required Arguments:
+        tex -- the instance of the TeX engine to use for parsing
+            the LaTeX file, if needed.
+        file_name -- the name of the file to load
+
+        Keyword Arguments:
+        options -- the options given on the macro to pass to the package
+
+        Returns:
+        boolean indicating whether or not the package loaded successfully
+
+        """
+        config = tex.ownerDocument.config
+        options = options or {}
+        module = os.path.splitext(file_name)[0]
+        # See if it has already been loaded
+        if module in self.packages:
+            return True
+
+        packagesini = os.path.join(os.path.dirname(plasTeX.Packages.__file__),
+                                   os.path.basename(module) + '.ini')
+
+        if self.loadPythonPackage(tex.ownerDocument, file_name, options):
+            return True
+
+        log.warning('No Python version of %s was found' % file_name)
+
+        # Try to load a LaTeX implementation
+        if (config['general']['load-tex-packages'] or
+              module in config['general']['tex-packages']):
+            log.warning('Will now try to load a LaTeX implementation of %s' % file_name)
+            result = tex.loadPackage(file_name, options)
+            try:
+                moduleini = os.path.join(os.path.dirname(tex.kpsewhich(file_name)),
+                                         os.path.basename(module) + '.ini')
+                self.loadINIPackage([packagesini, moduleini])
+            except OSError: pass
+            return result
+        return False
 
 
     def label(self, label, node=None):
@@ -562,7 +681,6 @@ class Context(object):
 
     def __contains__(self, key):
         return key in self.top
-
 
     def mapMethods(self):
         # Getter methods use the most local context
@@ -783,7 +901,7 @@ class Context(object):
         """
         self.contexts[-1].categories = self.categories = VERBATIM_CATEGORIES[:]
 
-    def newcounter(self, name, resetby=None, initial=0, format=None):
+    def newcounter(self, name, resetby=None, initial=0, format=None, trimLeft = False):
         """
         Create a new counter
 
@@ -808,7 +926,7 @@ class Context(object):
         if format is None:
             format = '${%s}' % name
         newclass = type('the' + name, (plasTeX.TheCounter,),
-                               {'format': format})
+                {'format': format, 'trimLeft': trimLeft})
         self.addGlobal('the' + name, newclass)
 
     def newwrite(self, name, file):
@@ -943,7 +1061,7 @@ class Context(object):
         """
         # Macro already exists
         if name in list(self.keys()):
-            if not issubclass(self[name], (plasTeX.NewCommand, plasTeX.Definition)):
+            if not issubclass(self[name], (plasTeX.NewCommand, plasTeX.UnrecognizedMacro, plasTeX.Definition, relax)):
                 if not issubclass(self[name], plasTeX.TheCounter):
                     return
             macrolog.debug('redefining command "%s"', name)
@@ -953,10 +1071,10 @@ class Context(object):
         assert isinstance(nargs, int), 'nargs must be an integer'
 
         if isinstance(definition, str):
-            definition = [x for x in Tokenizer(definition, self)]
+            definition = list(Tokenizer(definition, self))
 
         if isinstance(opt, str):
-            opt = [x for x in Tokenizer(opt, self)]
+            opt = list(Tokenizer(opt, self))
 
         macrolog.debug('creating newcommand %s', name)
         newclass = type(name, (plasTeX.NewCommand,),
@@ -964,22 +1082,22 @@ class Context(object):
 
         self.addGlobal(name, newclass)
 
-    def newenvironment(self, name, nargs=0, definition=None, opt=None):
+    def newenvironment(self, name, nargs=0, def_before=None, def_after=None, opt=None):
         """
         Create a \\newenvironment
 
         Required Arguments:
         name -- name of the macro to create
         nargs -- integer number of arguments that the macro has
-        definition -- two-element tuple containing the LaTeX definition.
-            Each element should be a string.  The first element
-            corresponds to the beginning of the environment, and the
-            second element is the end of the environment.
+        def_before -- string corresponding to TeX code inserted before the
+            environment
+        def_after -- string corresponding to TeX code inserted after the
+            environment
         opt -- string containing the LaTeX code to use in the
             optional argument
 
         Examples::
-            c.newenvironment('mylist', 0, (r'\\begin{itemize}', r'\\end{itemize}'))
+            c.newenvironment('mylist', 0, [r'\\begin{itemize}', r'\\end{itemize}'])
 
         """
         # Macro already exists
@@ -993,29 +1111,24 @@ class Context(object):
             nargs = 0
         assert isinstance(nargs, int), 'nargs must be an integer'
 
-        if definition is not None:
-            assert isinstance(definition, (tuple, list)), \
-                'definition must be a list or tuple'
-            assert len(definition) == 2, 'definition must have 2 elements'
-
-            if isinstance(definition[0], str):
-                definition[0] = [x for x in Tokenizer(definition[0], self)]
-            if isinstance(definition[1], str):
-                definition[1] = [x for x in Tokenizer(definition[1], self)]
+        if def_before:
+            def_before = list(Tokenizer(def_before, self))
+        if def_after:
+            def_after = list(Tokenizer(def_after, self))
 
         if isinstance(opt, str):
-            opt = [x for x in Tokenizer(opt, self)]
+            opt = list(Tokenizer(opt, self))
 
         macrolog.debug('creating newenvironment %s', name)
 
         # Begin portion
         newclass = type(name, (plasTeX.NewCommand,),
-                       {'nargs':nargs, 'opt':opt, 'definition':definition[0]})
+                       {'nargs':nargs, 'opt':opt, 'definition':def_before})
         self.addGlobal(name, newclass)
 
         # End portion
         newclass = type('end' + name, (plasTeX.NewCommand,),
-                       {'nargs':0, 'opt':None, 'definition':definition[1]})
+                       {'nargs':0, 'opt':None, 'definition':def_after})
         self.addGlobal('end' + name, newclass)
 
     def newdef(self, name, args=None, definition=None, local=True):
@@ -1043,7 +1156,7 @@ class Context(object):
 #           macrolog.debug('redefining definition "%s"', name)
 
         if isinstance(definition, str):
-            definition = [x for x in Tokenizer(definition, self)]
+            definition = list(Tokenizer(definition, self))
 
         macrolog.debug('creating def %s', name)
         newclass = type(name, (plasTeX.Definition,),
@@ -1053,6 +1166,14 @@ class Context(object):
             self.addLocal(name, newclass)
         else:
             self.addGlobal(name, newclass)
+
+    def get_let(self, command):
+        for context in reversed(self.contexts):
+            try:
+                return context.lets[command]
+            except KeyError:
+                pass
+        return command
 
     def let(self, dest, source):
         """
@@ -1066,7 +1187,13 @@ class Context(object):
             c.let('bgroup', BeginGroup('{'))
 
         """
-        self.lets[dest] = source
+        # Use nodeName instead of macroName to work with Macros as well as
+        # EscapeSequence, e.g. when we do
+        # \expandafter\let\csname foo\endcsname=1
+        if source.catcode == Token.CC_ESCAPE:
+            self.top[dest.nodeName] = self[source.nodeName]
+        else:
+            self.top.lets[dest.nodeName] = source
 
     def chardef(self, name, num):
         """

@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-
-from plasTeX.Base import Command, verb
+from plasTeX.Base import Command
 
 class url(Command):
     args = 'url:url'

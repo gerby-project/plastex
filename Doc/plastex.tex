@@ -4,6 +4,9 @@
 \usepackage{graphicx}
 \usepackage{makeidx}
 \usepackage{hyperref}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{forest}
 
 \newcommand{\titleref}{\ref}
 
@@ -25,10 +28,10 @@
     \item[\textbf{#1}] \hfill\\
 }{\end{description}}
 
-\title{plasTeX --- A Python Framework for Processing LaTeX Documents}
+
+\title{plasTeX 3.1 --- A Python Framework for Processing LaTeX Documents}
 \author{Kevin D. Smith}
 \authoraddress{\strong{SAS}\\Email: \email{Kevin.Smith@sas.com}}
-\date{7 February 2008}
 
 \makeindex
 \makemodindex
@@ -59,6 +62,7 @@
 \input{context-api}
 \input{renderer-api}
 \input{imager-api}
+\input{plugins}
 
 \appendix
 
@@ -69,6 +73,14 @@
 \chapter{Frequently Asked Questions}
 
 \input{parsing-faq}
+
+\chapter{Debugging}
+
+\input{debugging}
+
+\chapter{Zope Page Template Tutorial\label{sec:zpttutorial}}
+
+\input{zpttutorial}
 
 \printindex
 

@@ -1,121 +1,119 @@
-import os
 from plasTeX.ConfigManager import *
 from plasTeX.DOM import Node
 
-config = ConfigManager()
+class MacrosOption(DictOption[str]):
+    @classmethod
+    def entryFromString(cls, entry: str) -> str:
+        return entry
 
-section = config.add_section('html5')
+    def registerArgparse(self, group: ArgumentGroup):
+        group.add_argument(*self.options, dest=self.name,
+                           help=self.description, action='append',
+                           nargs=2, metavar=("MACRO", "VALUE"))
 
-config.add_category('html5', 'Html5 renderer Options')
+def addConfig(config: ConfigManager):
+    section = config.addSection('html5', 'Html5 renderer Options')
 
-section['extra-css'] = MultiOption(
-    """ Extra css files to use """,
-    options='--extra-css',
-    category='html5',
-    default='',
-)
+    section['extra-css'] = MultiStringOption(
+        """ Extra css files to use """,
+        options='--extra-css',
+        default=[],
+    )
 
-section['extra-js'] = MultiOption(
-    """ Extra javascript files to use """,
-    options='--extra-js',
-    category='html5',
-    default='',
-)
+    section['extra-js'] = MultiStringOption(
+        """ Extra javascript files to use """,
+        options='--extra-js',
+        default=[],
+    )
 
-section['theme-css'] = StringOption(
-    """ Theme css file""",
-    options='--theme-css',
-    category='html5',
-    default='green',
-)
+    section['theme-css'] = StringOption(
+        """ Theme css file""",
+        options='--theme-css',
+        default='white',
+    )
 
-section['use-theme-css'] = BooleanOption(
-    """ Use theme css """,
-    options='--use-theme-css !--no-theme-css',
-    category='html5',
-    default=True,
-)
+    section['use-theme-css'] = BooleanOption(
+        """ Use theme css """,
+        options='--use-theme-css !--no-theme-css',
+        default=True,
+    )
 
-section['use-theme-js'] = BooleanOption(
-    """ Use theme javascript """,
-    options='--use-theme-js !--no-theme-js',
-    category='html5',
-    default=True,
-)
+    section['use-theme-js'] = BooleanOption(
+        """ Use theme javascript """,
+        options='--use-theme-js !--no-theme-js',
+        default=True,
+    )
 
-section['display-toc'] = BooleanOption(
-    """ Display table of contents on each page """,
-    options='--display-toc !--no-display-toc',
-    category='html5',
-    default=True,
-)
+    section['display-toc'] = BooleanOption(
+        """ Display table of contents on each page """,
+        options='--display-toc !--no-display-toc',
+        default=True,
+    )
 
-section['localtoc-level'] = IntegerOption(
-    """ Create local toc above this level """,
-    options='--localtoc-level',
-    category='html5',
-    default=Node.DOCUMENT_LEVEL-1,
-)
+    section['localtoc-level'] = IntegerOption(
+        """ Create local toc above this level """,
+        options='--localtoc-level',
+        default=Node.DOCUMENT_LEVEL-1,
+    )
 
-section['breadcrumbs-level'] = IntegerOption(
-    """ Create breadcrumbs from this level """,
-    options='--breadcrumbs-level',
-    category='html5',
-    default=-10,
-)
+    section['breadcrumbs-level'] = IntegerOption(
+        """ Create breadcrumbs from this level """,
+        options='--breadcrumbs-level',
+        default=10,
+    )
 
-section['use-mathjax'] = BooleanOption(
-    """ Use mathjax """,
-    options='--use-mathjax !--no-mathjax',
-    category='html5',
-    default=True,
-)
+    section['use-mathjax'] = BooleanOption(
+        """ Use mathjax """,
+        options='--use-mathjax !--no-mathjax',
+        default=True,
+    )
 
-section['mathjax-url'] = StringOption(
-    """ Url of the MathJax lib """,
-    options='--mathjax-url',
-    category='html5',
-    default='http://cdn.mathjax.org/mathjax/latest/MathJax.js?config=TeX-AMS_CHTML',
-)
+    section['mathjax-url'] = StringOption(
+        """ Url of the MathJax lib """,
+        options='--mathjax-url',
+        default='https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-chtml.js',
+    )
 
-section['mathjax-dollars'] = BooleanOption(
-    """ Use single dollars as math delimiter for mathjax """,
-    options='--dollars !--no-dollars',
-    category='html5',
-    default=False,
-)
+    section['mathjax-dollars'] = BooleanOption(
+        """ Use single dollars as math delimiter for mathjax """,
+        options='--dollars !--no-dollars',
+        default=False,
+    )
 
-section['filters'] = MultiOption(
-    """Comma separated list of commands to invoke on each output page.""",
-    options='--filters',
-    category='html5',
-    default='',
-)
+    section['filters'] = MultiStringOption(
+        """Comma separated list of commands to invoke on each output page.""",
+        options='--filters',
+        default=[],
+    )
 
-section['tikz-compiler'] = StringOption(
-    """ LaTeX compiler for TikZ pictures """,
-    options='--tikz-compiler',
-    category='html5',
-    default='pdflatex',
-)
+    # gerby: options used by the gerby versions of Packages/tikz.py and tikz-cd.py
+    section['tikz-compiler'] = StringOption(
+        """ LaTeX compiler for TikZ pictures """,
+        options='--tikz-compiler',
+        default='pdflatex',
+    )
 
-section['tikz-converter'] = StringOption(
-    """ PDF to SVG converter for tikz and tikz-cd """,
-    options='--tikz-converter',
-    category='html5',
-    default='pdf2svg',
-)
+    section['tikz-converter'] = StringOption(
+        """ PDF to SVG converter for tikz and tikz-cd """,
+        options='--tikz-converter',
+        default='pdf2svg',
+    )
 
-section['tikz-template'] = StringOption(
-    """ Jinja2 template file for tikz """,
-    options='--tikz-template',
-    category='html5',
-    default='',
-)
+    section['tikz-template'] = StringOption(
+        """ Jinja2 template file for tikz """,
+        options='--tikz-template',
+        default='',
+    )
 
-section['tikz-cd-template'] = StringOption(
-    """ Jinja2 template file for tikz-cd """,
-    options='--tikz-cd-template',
-    category='html5',
-    default='',
-)
+    section['tikz-cd-template'] = StringOption(
+        """ Jinja2 template file for tikz-cd """,
+        options='--tikz-cd-template',
+        default='',
+    )
+
+    mjsection = config.addSection('mathjax-macros', 'MathJax macros')
+    mjsection['macros'] = MacrosOption(
+        """ Set MathJax macros """,
+        options = '--mj-macros',
+        default = {}
+    )

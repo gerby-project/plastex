@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """
 C.8 Definitions, Numbering, and Programming
 
@@ -8,10 +6,7 @@ C.8 Definitions, Numbering, and Programming
 from plasTeX import Command, Environment
 from plasTeX.Logging import getLogger
 
-log = getLogger()
-status = getLogger('status')
 deflog = getLogger('parse.definitions')
-envlog = getLogger('parse.environments')
 
 #
 # C.8.1 Defining Commands
@@ -50,7 +45,7 @@ class newenvironment(Command):
     def invoke(self, tex):
         self.parse(tex)
         a = self.attributes
-        args = (a['name'], a['nargs'], [a['begin'], a['end']])
+        args = (a['name'], a['nargs'], a['begin'], a['end'])
         kwargs = {'opt':a['opt']}
         deflog.debug('environment %s %s %s', *args)
         self.ownerDocument.context.newenvironment(*args, **kwargs)
@@ -86,14 +81,17 @@ class newtheorem(Command):
         if attrs['*modifier*']:
             newclass = type(str(name), (Environment,),
                     {'caption': caption, 'nodeName': 'thmenv', 'thmName': name,
-                        'args': '[title]', 'forcePars': True})
+                        'args': '[title]', 'forcePars': True, 'style': None})
         else:
             newclass = type(str(name), (Environment,),
                     {'caption': caption, 'nodeName': 'thmenv', 'thmName': name,
-                        'counter': counter, 'args': '[title]', 'forcePars': True})
+                        'counter': counter, 'args': '[title]', 'forcePars': True,
+                        'style': None})
         self.ownerDocument.context.addGlobal(name, newclass)
 
 
+# gerby: upstream moved proof to Packages/amsthm.py; kept here too so documents
+# that do not load amsthm keep working
 class proof(Environment):
     blockType = True
     args ='[caption]'

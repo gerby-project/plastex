@@ -4,7 +4,7 @@ from jinja2 import Template
 from bs4 import BeautifulSoup
 
 from plasTeX import NoCharSubEnvironment, Command
-from plasTeX.PackageResource import PackageResource
+from plasTeX.PackageResource import PackageProcessFilecontents
 from plasTeX.Packages import tikz
 
 from plasTeX.Logging import getLogger
@@ -48,7 +48,7 @@ def ProcessOptions(options, document):
     """This is called when the package is loaded."""
 
     try:
-        with open(document.config['html5']['tikz-cd-template'], "r") as file:
+        with open(tikz.getConfig(document, 'tikz-cd-template'), "r") as file:
             template = file.read()
     except IOError:
         log.info('Using default TikZ template.')
@@ -57,8 +57,8 @@ def ProcessOptions(options, document):
     document.userdata['tikzcd'] = {
             'template': Template(template),
             'tmp_dir': tempfile.mkdtemp(),
-            'compiler': document.config['html5']['tikz-compiler'],
-            'pdf2svg': document.config['html5']['tikz-converter'],
+            'compiler': tikz.getConfig(document, 'tikz-compiler', 'pdflatex'),
+            'pdf2svg': tikz.getConfig(document, 'tikz-converter', 'pdf2svg'),
             }
 
     def convert(document, content):
@@ -68,14 +68,12 @@ def ProcessOptions(options, document):
                 'tikzcd',
                 'Commutative diagram')
 
-    cb = PackageResource(
+    cb = PackageProcessFilecontents(
             renderers='html5',
-            key='processFileContents',
             data=convert)
     document.addPackageResource(cb)
 
-    cb = PackageResource(
+    cb = PackageProcessFilecontents(
             renderers='gerby',
-            key='processFileContents',
             data=convert)
     document.addPackageResource(cb)

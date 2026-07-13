@@ -1,21 +1,21 @@
-#!/usr/bin/env python
-
 """
 C.11.5 Index and Glossary (p211)
 
 """
 
-import string, os
+import os
 from plasTeX.Tokenizer import Token, EscapeSequence
 from plasTeX import Command, Environment, IgnoreCommand, encoding
 from plasTeX.Logging import getLogger
 from plasTeX.Base.LaTeX.Sectioning import SectionUtils
 
+from typing import Optional
+
 log = getLogger()
 
 try:
-    from plasTeX.Base.LaTeX.pyuca import Collator
-    collator = Collator(os.path.join(os.path.dirname(__file__), 'allkeys.txt')).sort_key
+    from pyuca import Collator_10_0_0
+    collator = Collator_10_0_0().sort_key
 except ImportError:
     collator = lambda x: x.lower()
 
@@ -23,8 +23,9 @@ try:
     from unidecode import unidecode
 except ImportError:
     log.warning('Cannot find unidecode lib. Expect issues with index sorting')
-    def unidecode(s):
+    def unidecode(s): # type: ignore
         return s
+
 
 class hyperpage(IgnoreCommand):
     args = 'page:nox'
@@ -35,7 +36,7 @@ class hyperindexformat(IgnoreCommand):
 class IndexUtils(object):
     """ Helper functions for generating indexes """
 
-    linkType = 'index'
+    linkType = 'index' # type: Optional[str]
     level = Command.CHAPTER_LEVEL
 
     class Index(Command):
@@ -277,6 +278,7 @@ class index(Command):
     def textContent(self):
         return ''
 
+# ponytail: gerby disables index processing ("things just go wrong with it")
 """
     def invoke(self, tex):
         result = Command.invoke(self, tex)
@@ -357,7 +359,6 @@ class index(Command):
 """
 
 
-
 class IndexEntry(object):
     """
     Utility class used to assist in the sorting of index entries
@@ -409,16 +410,17 @@ class IndexEntry(object):
         return not(self.see) and not(self.seealso)
 
     def __lt__(self, other):
-        result = (list(zip([collator(x) for x in self.sortkey if isinstance(x, str)],
-                         [collator(x.textContent) for x in self.key],
-                         self.key))
-                         <
-                     list(zip([collator(x) for x in other.sortkey if isinstance(x, str)],
-                         [collator(x.textContent) for x in other.key],
-                         other.key)))
-        if not result and len(self.key) != len(other.key):
-            return (len(self.key) < len(other.key))
-        return result
+        key_self = list(zip([collator(x) for x in self.sortkey if isinstance(x, str)],
+                            [collator(x.textContent) for x in self.key],
+                            self.key))
+        key_other = list(zip([collator(x) for x in other.sortkey if isinstance(x, str)],
+                             [collator(x.textContent) for x in other.key],
+                             other.key))
+        if key_self < key_other:
+            return True
+        elif key_self > key_other:
+            return False
+        return (len(self.key) < len(other.key))
 
     def __repr__(self):
         if self.format is None:

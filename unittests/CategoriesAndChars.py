@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import unittest
 from unittest import TestCase
 from plasTeX.TeX import TeX
@@ -19,7 +17,7 @@ class CategoryCodes(TestCase):
                 self.ownerDocument.context.catcode('$',11)
                 return Macro.parse(self, tex)
         s = TeX()
-        s.input('\code{this # is $ some & nasty _ text}&_2')
+        s.input(r'\code{this # is $ some & nasty _ text}&_2')
         s.ownerDocument.context['code'] = code
         tokens = [x for x in s]
 
@@ -42,7 +40,7 @@ class CategoryCodes(TestCase):
         class code(Macro):
             args = 'self'
         s = TeX()
-        s.input("{\catcode`\#=11\catcode`\$=11\catcode`\&=11\catcode`\_=11{this # is $ some & nasty _ text}}&_2")
+        s.input(r"{\catcode`\#=11\catcode`\$=11\catcode`\&=11\catcode`\_=11{this # is $ some & nasty _ text}}&_2")
         s.ownerDocument.context['code'] = code
         tokens = [x for x in s]
 

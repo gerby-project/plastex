@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import unittest
 from unittest import TestCase
 from plasTeX import Macro
@@ -9,7 +7,7 @@ from plasTeX.Tokenizer import *
 class Tokenizing(TestCase):
 
     def testTokens(self):
-        tokens = [x for x in TeX().input('{\hskip 36 pt}').itertokens()]
+        tokens = [x for x in TeX().input(r'{\hskip 36 pt}').itertokens()]
         expected = [BeginGroup('{'), 
                     EscapeSequence('hskip'), 
                     Other('3'),

@@ -1,11 +1,9 @@
-#!/usr/bin/env python
-
 """
 B.5 Macros for text
 
 """
 
-from plasTeX import Command, Environment, sourceChildren
+from plasTeX import Command, sourceChildren
 
 class frenchspacing(Command):
     str = ''
@@ -133,15 +131,6 @@ class nointerlineskip(Command):
 class offinterlineskip(Command):
     pass
 
-class smallskip(Command):
-    pass
-
-class medskip(Command):
-    pass
-
-class bigskip(Command):
-    pass
-
 class TeXBreak(Command):
     macroName = 'break'
     str = ''
@@ -153,7 +142,7 @@ class ControlSpace(Command):
     macroName = 'active::~'
 
 class slash(Command):
-    pass
+    str = '/'
 
 class filbreak(Command):
     pass
@@ -191,6 +180,9 @@ class llap(Command):
 class centerline(Command):
     args = 'self'
 
+class rightline(Command):
+    args = 'self'
+
 class underbar(Command):
     args = 'self'
 
@@ -208,9 +200,6 @@ class textindent(Command):
     args = 'self'
 
 class narrower(Command):
-    pass
-
-class raggedright(Environment):
     pass
 
 #

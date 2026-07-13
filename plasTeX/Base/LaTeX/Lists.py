@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """
 C.6.2 List-Making Environments
 C.6.3 The list and trivlist Enviroments
@@ -7,9 +5,6 @@ C.6.3 The list and trivlist Enviroments
 """
 
 from plasTeX import Environment, Command, DimenCommand
-from plasTeX import Logging
-
-log = Logging.getLogger()
 
 class enuminame(Command): str = ''
 class enumiiname(Command): str = ''

@@ -1,0 +1,39 @@
+name: tests
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    name: Run tests
+    runs-on: ubuntu-22.04
+
+    strategy:
+      matrix:
+        python-version: ["3.7", "3.8", "3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
+          cache: pip
+          cache-dependency-path: requirements*.txt
+
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends dvisvgm dvipng imagemagick inkscape pdf2svg poppler-utils texlive-binaries texlive-latex-base texlive-latex-extra texlive-extra-utils texlive-xetex
+
+      - name: Install python dependencies
+        run: |
+          pip install mypy
+          pip install -r requirements.txt
+          pip install -r requirements_tests.txt
+          pip install .
+
+      - name: Run tests
+        run: pytest -v --cov=plasTeX
+
+      - name: Run mypy
+        run: mypy --install-types --non-interactive plasTeX unittests

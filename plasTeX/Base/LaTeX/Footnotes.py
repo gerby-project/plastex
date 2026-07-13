@@ -1,12 +1,9 @@
-#!/usr/bin/env python
-
 """
 C.3.3 Footnotes (p172)
 
 """
 
-from plasTeX import Command, Environment, DimenCommand
-from plasTeX.Logging import getLogger
+from plasTeX import Command, DimenCommand
 
 
 class footnote(Command):

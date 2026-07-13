@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import re, string, os.path
 
 class Filenames(object):
@@ -84,6 +82,7 @@ class Filenames(object):
     def parseFilenames(self, spec):
         """ Parse and expand the filename string """
         # Normalize string before parsing
+        spec = spec.strip()
         spec = re.sub(r'\$(\w+)', r'${\1}', spec)
         spec = re.sub(r'\${\s*(\w+)\s*}', r'${\1}', spec)
         spec = re.sub(r'\}\(\s*(\d+)\s*\)', r'.\1}', spec)
@@ -197,7 +196,7 @@ class Filenames(object):
                 if result not in self.invalid:
                     self.invalid[result] = None
                     yield result
-            except KeyError as key:
+            except KeyError:
                 continue
 
         # We've reached the wildcard stage.  The wildcard gives us

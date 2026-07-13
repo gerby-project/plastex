@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-
-from plasTeX import Command, Environment
 from plasTeX.Base.LaTeX.Quotations import verse
 
 verse.args = '[ width:nox ]'

@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """
 TeX
 
@@ -16,8 +14,9 @@ Example:
 
 """
 from io import IOBase
-import string, os, traceback, sys, plasTeX, subprocess, types
-from plasTeX.Tokenizer import Tokenizer, Token, EscapeSequence, Other, EndInput
+from typing import Optional, List
+import contextlib, string, os, sys, plasTeX, subprocess
+from plasTeX.Tokenizer import Tokenizer, Token, EscapeSequence, Other
 from plasTeX import TeXDocument
 from plasTeX.Base.TeX.Primitives import MathShift
 from plasTeX import ParameterCommand, Macro
@@ -28,9 +27,8 @@ from plasTeX.Logging import getLogger, disableLogging, fileLogging
 __all__ = ['TeX']
 
 log = getLogger()
+
 status = getLogger('status')
-tokenlog = getLogger('parse.tokens')
-digestlog = getLogger('parse.digest')
 _type = type
 
 class bufferediter(object):
@@ -60,11 +58,11 @@ class TeX(object):
     """
     documentClass = TeXDocument
 
-    def __init__(self, ownerDocument=None, myfile=None):
+    def __init__(self, ownerDocument=None, file=None):
         if ownerDocument is None:
             ownerDocument = self.documentClass()
             self.toplevel = True
-        elif myfile:
+        elif file:
             self.toplevel = True
         else:
             self.toplevel = False
@@ -115,10 +113,10 @@ class TeX(object):
         self.currentInput = (0,0)
 
         self.jobname = None
-        if myfile is not None:
+        if file is not None:
             # Filename
-            if isinstance(myfile, (str, bytes)):
-                myfile = str(myfile)
+            if isinstance(file, (str, bytes)):
+                file = str(file)
                 '''
                 if config has no files structure
                 or encoding is not specified
@@ -133,15 +131,14 @@ class TeX(object):
                 if encoding in ['utf8', 'utf-8', 'utf_8']:
                     encoding = 'utf_8_sig'
 
-                fname = self.kpsewhich(myfile)
-                with open(fname, encoding=encoding) as fd:
-                    self.input(fd.read())
-                self.jobname = os.path.basename(os.path.splitext(myfile)[0])
+                fname = self.kpsewhich(file)
+                self.input(open(fname, encoding=encoding))
+                self.jobname = os.path.basename(os.path.splitext(file)[0])
 
             # File object
             else:
-                self.input(myfile)
-                self.jobname = os.path.basename(os.path.splitext(myfile.name)[0])
+                self.input(file)
+                self.jobname = os.path.basename(os.path.splitext(file.name)[0])
 
     def input(self, source):
         """
@@ -156,7 +153,7 @@ class TeX(object):
             return
         if self.jobname is None:
             if isinstance(source, str):
-                self.jobname = os.path.basename(os.path.splitext(source)[0])
+                self.jobname = ''
             elif isinstance(source, IOBase):
                 self.jobname = os.path.basename(os.path.splitext(source.name)[0])
 
@@ -171,16 +168,20 @@ class TeX(object):
 
         """
         if self.inputs:
-            self.inputs.pop()
+            old_input = self.inputs.pop()
+            try:
+                old_input[0].source.close()
+            except AttributeError:
+                pass
         if self.inputs:
             self.currentInput = self.inputs[-1]
 
-    def loadPackage(self, myfile, options=None):
+    def loadPackage(self, file, options=None):
         """
         Load a LaTeX package
 
         Required Arguments:
-        myfile -- name of the file to load
+        file -- name of the file to load
 
         Keyword Arguments:
         options -- options passed to the macro which is loading the package
@@ -190,7 +191,7 @@ class TeX(object):
         config = self.ownerDocument.config
 
         try:
-            path = self.kpsewhich(myfile)
+            path = self.kpsewhich(file)
         except OSError as msg:
             log.warning(msg)
             return False
@@ -207,7 +208,7 @@ class TeX(object):
                 flag = plasTeX.Command()
                 self.pushToken(flag)
                 self.input(f)
-                self.ownerDocument.context.packages[myfile] = options or {}
+                self.ownerDocument.context.packages[file] = options or {}
                 for tok in self:
                     if tok is flag:
                         break
@@ -216,7 +217,7 @@ class TeX(object):
             if msg:
                 msg = ' ( %s )' % str(msg)
             # Failed to load LaTeX style file
-            log.warning('Error opening package "%s"%s', myfile, msg)
+            log.warning('Error opening package "%s"%s', file, msg)
             status.info(' ) ')
             return False
 
@@ -270,34 +271,9 @@ class TeX(object):
                     t.parentNode = None
                     yield t
 
-            except (EndInput, StopIteration):
+            except StopIteration:
                 endInput()
 
-            # This really shouldn't happen, but just in case...
-            except IndexError:
-                break
-
-    def iterchars(self):
-        """
-        Iterate over input characters (untokenized)
-
-        Returns:
-        generator that iterates through the untokenized characters
-
-        """
-        # Create locals before going into generator loop
-        inputs = self.inputs
-        context = self.ownerDocument.context
-        endInput = self.endInput
-        ownerDocument = self.ownerDocument
-
-        while inputs:
-            # Walk through characters
-            try:
-                for char in inputs[-1][0].iterchars():
-                    yield char
-                else:
-                    endInput()
             # This really shouldn't happen, but just in case...
             except IndexError:
                 break
@@ -416,7 +392,6 @@ class TeX(object):
 
         return out
 
-
     def parse(self, output=None):
         """
         Parse stream content until it is empty
@@ -448,8 +423,9 @@ class TeX(object):
             raise
 
         if self.toplevel:
-            for callback in self.ownerDocument.postParseCallbacks:
-                callback()
+            for order, callbacks in sorted(self.ownerDocument.postParseCallbacks.items()):
+                for callback in callbacks:
+                    callback()
         return output
 
     def textTokens(self, text):
@@ -465,8 +441,6 @@ class TeX(object):
     def pushToken(self, token):
         """
         Push a token back into the token buffer to be re-read
-
-        This method also pops an item off of the output token stream.
 
         Required Arguments:
         token -- token to push back
@@ -574,17 +548,23 @@ class TeX(object):
 
         cases = [[]]
         nesting = 0
+        correctly_terminated = False
+        iterator = self.itertokens()
 
-        for t in self.itertokens():
+        for t in iterator:
             name = getattr(t, 'macroName', '') or ''
-            if name.startswith('if'):
+            if name == 'newif':
+                cases[-1].append(t)
+                cases[-1].append(next(iterator))
+                continue
+            elif name.startswith('if'):
                 cases[-1].append(t)
                 nesting += 1
             elif name == 'fi':
-                if nesting > 1:
-                    cases[-1].append(t)
-                elif not nesting:
+                if not nesting:
+                    correctly_terminated = True
                     break
+                cases[-1].append(t)
                 nesting -= 1
             elif not(nesting) and name == 'else':
                 cases.append([])
@@ -594,6 +574,9 @@ class TeX(object):
                 continue
             else:
                 cases[-1].append(t)
+
+        if not correctly_terminated:
+            log.warning(r'\end occurred when \if was incomplete')
 
         # else case for ifs without elses
         cases.append([])
@@ -613,7 +596,8 @@ class TeX(object):
 
     def readArgumentAndSource(self, spec=None, type=None, subtype=None,
                     delim=',', expanded=False, default=None, parentNode=None,
-                    name=None, stripLeadingWhitespace=True):
+                    name=None, stripLeadingWhitespace=True,
+                    charsubs: Optional[List] = None):
         """
         Get an argument and the TeX source that created it
 
@@ -642,6 +626,10 @@ class TeX(object):
         name -- the name of the argument being parsed
         stripLeadingWhitespace -- if True, whitespace is skipped before
             looking for the argument
+        charsubs -- a list of character substitution to apply to the
+            argument. If None is provided then the document charsubs
+            attribute will be used if it exists, otherwise an empty
+            list will be used.
 
         Returns:
         tuple where the first argument is:
@@ -659,6 +647,9 @@ class TeX(object):
 
         # Disable expansion of parameters
         ParameterCommand.disable()
+
+        if charsubs is None:
+            charsubs = getattr(self.ownerDocument, 'charsubs', [])
 
         if type in ['Dimen','Length','Dimension']:
             n = self.readDimen()
@@ -780,7 +771,7 @@ class TeX(object):
         # Normalize any document fragments
         if expanded and \
            getattr(res,'nodeType',None) == Macro.DOCUMENT_FRAGMENT_NODE:
-            res.normalize(getattr(self.ownerDocument, 'charsubs', []))
+            res.normalize(charsubs)
 
         # Re-enable Parameters
         ParameterCommand.enable()
@@ -967,7 +958,7 @@ class TeX(object):
 
         """
         argtypes = {}
-        for key, t in list(self.argtypes.items()):
+        for key, t in self.argtypes.items():
             if isinstance(t, tuple):
                 argtypes[key] = t[0]
             else:
@@ -978,9 +969,8 @@ class TeX(object):
             pass
 
         # Could not find specified type
-        elif dtype not in list(argtypes.keys()):
+        elif dtype not in argtypes.keys():
             log.warning('Could not find datatype "%s"' % dtype)
-            pass
 
         # Casting to specified type
         else:
@@ -1117,7 +1107,7 @@ class TeX(object):
 
     def castDimen(self, tokens, **kwargs):
         """
-        Jain the tokens into a string and convert the result into a `dimen`
+        Join the tokens into a string and convert the result into a `dimen`
 
         Required Arguments:
         tokens -- list of tokens to cast
@@ -1136,7 +1126,7 @@ class TeX(object):
 
     def castMuDimen(self, tokens, **kwargs):
         """
-        Jain the tokens into a string and convert the result into a `MuDimen`
+        Join the tokens into a string and convert the result into a `MuDimen`
 
         Required Arguments:
         tokens -- list of tokens to cast
@@ -1155,7 +1145,7 @@ class TeX(object):
 
     def castGlue(self, tokens, **kwargs):
         """
-        Jain the tokens into a string and convert the result into a `Glue`
+        Join the tokens into a string and convert the result into a `Glue`
 
         Required Arguments:
         tokens -- list of tokens to cast
@@ -1174,7 +1164,7 @@ class TeX(object):
 
     def castMuGlue(self, tokens, **kwargs):
         """
-        Jain the tokens into a string and convert the result into a `MuGlue`
+        Join the tokens into a string and convert the result into a `MuGlue`
 
         Required Arguments:
         tokens -- list of tokens to cast
@@ -1340,46 +1330,51 @@ class TeX(object):
         full path to file -- if it is found
 
         """
-        # When, for example, ``\Input{name}`` is encountered, we should look in
-        # the directory containing the file being processed. So the following
-        # code adds the directory to the start of $TEXINPUTS.
-        TEXINPUTS = None
-        try:
-            srcDir = os.path.dirname(self.filename)
-        except AttributeError:
-            # I think this happens only for the command line file.
-            pass
-        else:
+        if os.path.isabs(name):
+            return name
+
+        with contextlib.ExitStack() as stack:
+            # When, for example, ``\Input{name}`` is encountered, we should look in
+            # the directory containing the file being processed. So the following
+            # code adds the directory to the start of $TEXINPUTS.
             TEXINPUTS = os.environ.get("TEXINPUTS",'')
-            os.environ["TEXINPUTS"] = "%s%s%s%s" % (srcDir, os.path.pathsep, TEXINPUTS, os.path.pathsep)
+            try:
+                srcDir = os.path.dirname(self.filename)
+            except AttributeError:
+                # I think this happens only for the command line file.
+                pass
+            else:
+                if TEXINPUTS:
+                    os.environ["TEXINPUTS"] = "%s%s%s%s" % (srcDir, os.path.pathsep, TEXINPUTS, os.path.pathsep)
+                    @stack.callback
+                    def restore_texinputs():
+                        os.environ["TEXINPUTS"] = TEXINPUTS
+                else:
+                    os.environ["TEXINPUTS"] = "%s%s" % (srcDir, os.path.pathsep)
+                    @stack.callback
+                    def restore_texinputs():
+                        os.environ.pop("TEXINPUTS", None)
 
-        try:
-            program = self.ownerDocument.config['general']['kpsewhich']
+            try:
+                program = self.ownerDocument.config['general']['kpsewhich']
 
-            kwargs = {'stdout':subprocess.PIPE}
-            if sys.platform.lower().startswith('win'):
-                kwargs['shell'] = True
+                kwargs = {'stdout':subprocess.PIPE}
+                if sys.platform.lower().startswith('win'):
+                    kwargs['shell'] = True
 
-            output = subprocess.Popen([program, name], **kwargs).communicate()[0].strip()
-            output = output.decode('utf-8')
-            if output:
-                return output
+                output = subprocess.Popen([program, name], **kwargs).communicate()[0].strip()
+                output = output.decode('utf-8')
+                if output:
+                    return output
 
-        except:
-            fullname = ''
-            paths = os.environ["TEXINPUTS"].split(os.path.pathsep)
-            for path in [x for x in paths if x]:
-                if name in os.listdir(path):
-                    fullname = os.path.join(path,name)
-                    break
-            if fullname:
-                return fullname
+            except Exception:
+                paths = os.environ.get("TEXINPUTS", '.').split(os.path.pathsep)
+                for path in paths:
+                    path = os.path.join(path, name)
+                    if os.path.exists(path):
+                        return path
 
-        # Undo any mods to $TEXINPUTS.
-        if TEXINPUTS:
-            os.environ["TEXINPUTS"] = TEXINPUTS
-
-        raise OSError('Could not find any file named: %s' % name)
+        raise FileNotFoundError('Could not find any file named: %s' % name)
 
 #
 # Parsing helper methods for parsing numbers, spaces, dimens, etc.

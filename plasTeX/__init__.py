@@ -1,7 +1,6 @@
-#!/usr/bin/env python
+__version__ = '3.1'
 
-__version__ = '9.3'
-
+from typing import Optional, Union, List, Callable, Dict
 from plasTeX import Logging, encoding
 from plasTeX.DOM import Element, Text, Node, DocumentFragment, Document
 from plasTeX.Tokenizer import Token, BeginGroup, EndGroup, Other
@@ -101,9 +100,10 @@ class CSSStyles(dict):
         string containing inline CSS
 
         """
-        if not self:
+        nonempty_keys = {k: str(v) for k, v in self.items() if v is not None and str(v)}
+        if not nonempty_keys:
             return None
-        return '; '.join(['%s:%s' % (x[0], x[1]) for x in list(self.items())])
+        return '; '.join(['%s:%s' % (k, v) for k, v in nonempty_keys.items()])
 
 
 class Macro(Element):
@@ -115,9 +115,9 @@ class Macro(Element):
     MODE_BEGIN = 1
     MODE_END = 2
 
-    macroName = None  # TeX macro name (instead of class name)
+    macroName = None # type: Optional[str] # TeX macro name (instead of class name)
     macroMode = MODE_NONE  # begin, end, or none
-    mathMode = None
+    mathMode = None # type: Optional[bool]
 
     # Node variables
     level = Node.COMMAND_LEVEL
@@ -125,10 +125,10 @@ class Macro(Element):
     nodeValue = None
 
     # Counter associated with this macro
-    counter = None
+    counter = None # type: Optional[str]
 
     # Value to return when macro is referred to by \ref
-    ref = None
+    ref = None # type: Optional[str]
 
     # Attributes that should be persisted between runs for nodes
     # that can be referenced.  This allows for cross-document links.
@@ -138,13 +138,19 @@ class Macro(Element):
     argSource = ''
 
     # LaTeX argument template
-    args = ''
+    args = '' # type: str
 
     # Force there to be at least on paragraph in the content
     forcePars = False
 
-    # Whether or not to perform character substitutions
-    doCharSubs = True
+    # Macros do not have catcodes but we give EscapeSequence a catcode of 0 so
+    # I guess we should follow suit... Normally commands only check the catcode
+    # of unexpanded tokens from the tokenizer, which all have the right catcode
+    # set. This is done by assuming that tokens further down the token stream
+    # have not been expanded. There are corner cases where this assumption is
+    # not true, and causes some code to crash, e.g. when \expandafter is used.
+    # So we set the catcode to ensure correct behaviour.
+    catcode = 0
 
     def persist(self, attrs=None):
         """
@@ -198,93 +204,93 @@ class Macro(Element):
         setattr(self, '@idref', d)
         return d
 
-    def captionName():
+    @property
+    def captionName(self):
         """ Name associated with the counter """
-        def fget(self):
-            if hasattr(self, '@captionName'):
-                return getattr(self, '@captionName')
-            self.captionName = name = self.ownerDocument.createTextNode('')
-            return name
-        def fset(self, value):
-            setattr(self, '@captionName', value)
-        return locals()
-    captionName = property(**captionName())
+        if hasattr(self, '@captionName'):
+            return getattr(self, '@captionName')
+        self.captionName = name = self.ownerDocument.createTextNode('')
+        return name
 
-    def title():
+    @captionName.setter
+    def captionName(self, value):
+        setattr(self, '@captionName', value)
+
+    @property
+    def title(self):
         """ Retrieve title from variable or attributes dictionary """
-        def fget(self):
+        try:
+            return getattr(self, '@title')
+        except AttributeError:
             try:
-                return getattr(self, '@title')
-            except AttributeError:
-                try:
-                    return self.attributes['title']
-                except KeyError:
-                    pass
-            raise AttributeError('could not find attribute "title"')
-        def fset(self, value):
-            setattr(self, '@title', value)
-        return locals()
-    title = property(**title())
+                return self.attributes['title']
+            except KeyError:
+                pass
+        raise AttributeError('could not find attribute "title"')
 
-    def fullTitle():
+    @title.setter
+    def title(self, value):
+        setattr(self, '@title', value)
+
+    @property
+    def fullTitle(self):
         """ Retrieve title including the section number """
-        def fget(self):
+        try:
+            return getattr(self, '@fullTitle')
+        except AttributeError:
+            if self.ref is not None:
+                fullTitle = self.ownerDocument.createDocumentFragment()
+                fullTitle.extend([self.ref, ' ', self.title], setParent=False)
+            else:
+                fullTitle = self.title
+            setattr(self, '@fullTitle', fullTitle)
+            return fullTitle
+
+    @fullTitle.setter
+    def fullTitle(self, value):
+        setattr(self, '@fullTitle', value)
+
+    @property
+    def tocEntry(self):
+        """ Retrieve table of contents entry """
+        try:
+            return getattr(self, '@tocEntry')
+        except AttributeError:
             try:
-                return getattr(self, '@fullTitle')
+                if 'toc' in list(self.attributes.keys()):
+                    toc = self.attributes['toc']
+                    if toc is None:
+                        toc = self.title
+                    setattr(self, '@tocEntry', toc)
+                    return toc
+            except (KeyError, AttributeError):
+                pass
+        return self.title
+
+    @tocEntry.setter
+    def tocEntry(self, value):
+        setattr(self, '@tocEntry', value)
+
+    @property
+    def fullTocEntry(self):
+        """ Retrieve title including the section number """
+        try:
+            try:
+                return getattr(self, '@fullTocEntry')
             except AttributeError:
                 if self.ref is not None:
-                    fullTitle = self.ownerDocument.createDocumentFragment()
-                    fullTitle.extend([self.ref, ' ', self.title], setParent=False)
+                    fullTocEntry = self.ownerDocument.createDocumentFragment()
+                    fullTocEntry.extend([self.ref, ' ', self.tocEntry], setParent=False)
                 else:
-                    fullTitle = self.title
-                setattr(self, '@fullTitle', fullTitle)
-                return fullTitle
-        def fset(self, value):
-            setattr(self, '@fullTitle', value)
-        return locals()
-    fullTitle = property(**fullTitle())
-
-    def tocEntry():
-        """ Retrieve table of contents entry """
-        def fget(self):
-            try:
-                return getattr(self, '@tocEntry')
-            except AttributeError:
-                try:
-                    if 'toc' in list(self.attributes.keys()):
-                        toc = self.attributes['toc']
-                        if toc is None:
-                            toc = self.title
-                        setattr(self, '@tocEntry', toc)
-                        return toc
-                except (KeyError, AttributeError):
-                    pass
+                    fullTocEntry = self.tocEntry
+                setattr(self, '@fullTocEntry', fullTocEntry)
+                return fullTocEntry
+        except Exception as msg:
             return self.title
-        def fset(self, value):
-            setattr(self, '@tocEntry', value)
-        return locals()
-    tocEntry = property(**tocEntry())
 
-    def fullTocEntry():
-        """ Retrieve title including the section number """
-        def fget(self):
-            try:
-                try:
-                    return getattr(self, '@fullTocEntry')
-                except AttributeError:
-                    if self.ref is not None:
-                        fullTocEntry = self.ownerDocument.createDocumentFragment()
-                        fullTocEntry.extend([self.ref, ' ', self.tocEntry], setParent=False)
-                    else:
-                        fullTocEntry = self.tocEntry
-                    setattr(self, '@fullTocEntry', fullTocEntry)
-                    return fullTocEntry
-            except Exception as msg:
-                return self.title
-        def fset(self, value):
-            setattr(self, '@fullTocEntry', value)
-        return locals()
-    fullTocEntry = property(**fullTocEntry())
+    @fullTocEntry.setter
+    def fullTocEntry(self, value):
+        setattr(self, '@fullTocEntry', value)
 
     @property
     def style(self):
@@ -319,22 +325,22 @@ class Macro(Element):
         setattr(tself, localsname, loc)
         return loc
 
-    def id():
-        def fset(self, value):
-            if value:
-                setattr(self, '@id', value)
-            else:
-                delattr(self, '@id')
-        def fget(self):
-            id = getattr(self, '@id', None)
-            if id is None:
-                for id in idgen:
-                    setattr(self, '@hasgenid', True)
-                    self.id = id
-                    break
-            return id
-        return locals()
-    id = property(**id())
+    @property
+    def id(self):
+        id = getattr(self, '@id', None)
+        if id is None:
+            for id in idgen:
+                setattr(self, '@hasgenid', True)
+                self.id = id
+                break
+        return id
+
+    @id.setter
+    def id(self, value):
+        if value:
+            setattr(self, '@id', value)
+        else:
+            delattr(self, '@id')
 
     def expand(self, tex):
         """ Fully expand the macro """
@@ -394,7 +400,12 @@ class Macro(Element):
         if t.macroName is None:
             return t.__name__
         return t.macroName
-    nodeName = tagName
+
+    @tagName.setter
+    def tagName(self, value):
+        self.macroName = value
+
+    nodeName = tagName # type: ignore # mypy#4125
 
     @property
     def source(self):
@@ -424,7 +435,8 @@ class Macro(Element):
         argSource = sourceArguments(self)
         if not argSource:
             argSource = ' '
-        elif argSource[0] in encoding.stringletters():
+        elif argSource[0] in encoding.stringletters() and\
+             not (len(name) == 1 and name[0] not in encoding.stringletters()):
             argSource = ' %s' % argSource
         s = '%s%s%s' % (escape, name, argSource)
 
@@ -475,9 +487,9 @@ class Macro(Element):
                 self.attributes[arg.name] = output
                 self.postArgument(arg, output, tex)
         except:
-            raise
             log.error('Error while parsing argument "%s" of "%s"' %
                        (arg.name, self.nodeName))
+            raise
 
         self.postParse(tex)
 
@@ -553,7 +565,7 @@ class Macro(Element):
         tex -- the TeX instance containing the current context
 
         """
-        if self.counter:
+        if self.counter is not None:
             self.ownerDocument.context.currentlabel = self
             self.stepcounter(tex)
 
@@ -652,6 +664,9 @@ class Macro(Element):
                     argdict['expanded'] = False
                 else:
                     argdict['expanded'] = True
+                if argdict.get('type') == 'url':
+                    argdict['charsubs'] = []
+
                 macroargs.append(Argument(item, index, argdict))
                 index += 1
                 argdict.clear()
@@ -776,7 +791,7 @@ class Macro(Element):
         for i in range(len(self) - 1, -1, -1):
             item = self[i]
             if item.level == Node.PAR_LEVEL:
-                if len(item) == 0:
+                if not item:
                     self.pop(i)
                 elif len(item) == 1 and item[0].isElementContentWhitespace:
                     self.pop(i)
@@ -791,23 +806,16 @@ class TeXFragment(DocumentFragment):
 class TeXDocument(Document):
     """ TeX Document node """
     documentFragmentClass = TeXFragment
-    charsubs = [
-        ('``', chr(8220)),
-        ("''", chr(8221)),
-        ('"`', chr(8222)),
-        ('"\'', chr(8220)),
-        ('`', chr(8216)),
-        ('---', chr(8212)),
-        ('--', chr(8211)),
-#       ('fj', unichr(58290)),
-#       ('ff', unichr(64256)),
-#       ('fi', unichr(64257)),
-#       ('fl', unichr(64258)),
-#       ('ffi',unichr(64259)),
-#       ('ffl',unichr(64260)),
-#       ('ij', unichr(307)),
-#       ('IJ', unichr(308)),
-    ]
+    # gerby: no ("'", chr(8217)) substitution (gerby-project#37)
+    defaultCharsubs = [
+            ('``', chr(8220)),
+            ("''", chr(8221)),
+            ('"`', chr(8222)),
+            ('"\'', chr(8220)),
+            ('`', chr(8216)),
+            ('---', chr(8212)),
+            ('--', chr(8211)),
+        ]
 
     def __init__(self, *args, **kwargs):
         # super(TeXDocument, self).__init__(*args, **kwargs)
@@ -820,15 +828,18 @@ class TeXDocument(Document):
 
         if 'config' not in list(kwargs.keys()):
             from plasTeX import Config
-            self.config = Config.config
+            self.config = Config.defaultConfig()
         else:
             self.config = kwargs['config']
 
-        # post parsing callbacks list
-        self.postParseCallbacks = []
+        # post parsing callbacks dictionary
+        # each key is an ordering number (low numbers are called first)
+        self.postParseCallbacks = dict() # type: Dict[int, List[Callable[[],None]]]
 
         self.packageResources = []
         self.rendererdata = dict()
+
+        self.charsubs = [x for x in TeXDocument.defaultCharsubs if x[0] not in self.config["document"]["disable-charsub"]]
 
     def addPackageResource(self, resource):
         """
@@ -839,6 +850,17 @@ class TeXDocument(Document):
             self.packageResources.extend(resource)
         else:
             self.packageResources.append(resource)
+
+    def addPostParseCallbacks(self, order: int,
+            cbs: Union[Callable[[],None], List[Callable[[],None]]]) -> None:
+        """Add a function or a list of functions to be called after
+        parsing, at the given order time."""
+        cur = self.postParseCallbacks.setdefault(order, [])
+        if isinstance(cbs, list):
+            cur += cbs
+        else:
+            cur.append(cbs)
+
 
     def createElement(self, name):
         elem = self.context[name]()
@@ -927,21 +949,92 @@ class NoCharSubEnvironment(Environment):
     A subclass of Environment which prevents character substitution inside
     itself.
     """
-    def __init__(self, *args, **kwargs):
-        # Will hold the owner document charsubs to restore it at the end
-        self.charsubs = []
-        super(NoCharSubEnvironment, self).__init__(*args, **kwargs)
+
+    def normalize(self, charsubs=None):
+        """ Normalize, but don't allow character substitutions """
+        return Environment.normalize(self, charsubs=None)
+
+class VerbatimEnvironment(NoCharSubEnvironment):
+    """
+    A subclass of Environment that prevents processing of the contents. This is
+    used for the verbatim environment.
+
+    It is also useful in cases where you want to leave the processing to the
+    renderer (e.g. via the imager) and the content is sufficiently complex that
+    we don't want plastex to deal with the commands within it.
+
+    For example, for tikzpicture, there are many Tikz commands and it would be
+    tedious to attempt to define all of them in the python file, when we are
+    not going to use them anyway.
+    """
+
+    blockType = True
+    captionable = True
 
     def invoke(self, tex):
-        # The goal is to prevent any character substitution while handling a
-        # this environment.
-        doc = self.ownerDocument
-        if self.macroMode == Macro.MODE_BEGIN:
-            self.charsubs = doc.charsubs
-            doc.charsubs = []
-        elif self.macroMode == Macro.MODE_END:
-            doc.charsubs = self.charsubs
-        super(NoCharSubEnvironment, self).invoke(tex)
+        """
+        We enter verbatim mode by setting all category codes to CC_LETTER
+        or CC_OTHER. However, we will have to manually scan for the end of the
+        environment since the tokenizer does not tokenize the end of the
+        environment as an EscapeSequence Token.
+        """
+        if self.macroMode == Environment.MODE_END:
+            return
+
+        escape = self.ownerDocument.context.categories[0][0]
+        bgroup = self.ownerDocument.context.categories[1][0]
+        egroup = self.ownerDocument.context.categories[2][0]
+        self.ownerDocument.context.push(self)
+        self.parse(tex)
+        self.ownerDocument.context.setVerbatimCatcodes()
+        tokens = [self]
+
+        # Get the name of the currently expanding environment
+        name = self.nodeName
+        if self.macroMode != Environment.MODE_NONE:
+            if self.ownerDocument.context.currenvir is not None:
+                name = self.ownerDocument.context.currenvir
+
+        # If we were invoked by a \begin{...} look for an \end{...}
+        endpattern = list(r'%send%s%s%s' % (escape, bgroup, name, egroup))
+
+        # If we were invoked as a command (i.e. \verbatim) look
+        # for an end without groupings (i.e. \endverbatim)
+        endpattern2 = list(r'%send%s' % (escape, name))
+
+        endlength = len(endpattern)
+        endlength2 = len(endpattern2)
+        # Iterate through tokens until the endpattern is found
+        for tok in tex:
+            tokens.append(tok)
+            if len(tokens) >= endlength:
+                if tokens[-endlength:] == endpattern:
+                    tokens = tokens[:-endlength]
+                    self.ownerDocument.context.pop(self)
+                    # Expand the end of the macro
+                    end = self.ownerDocument.createElement(name)
+                    end.parentNode = self.parentNode
+                    end.macroMode = Environment.MODE_END
+                    res = end.invoke(tex)
+                    if res is None:
+                        res = [end]
+                    tex.pushTokens(res)
+                    break
+            if len(tokens) >= endlength2:
+                if tokens[-endlength2:] == endpattern2:
+                    tokens = tokens[:-endlength2]
+                    self.ownerDocument.context.pop(self)
+                    # Expand the end of the macro
+                    end = self.ownerDocument.createElement(name)
+                    end.parentNode = self.parentNode
+                    end.macroMode = Environment.MODE_END
+                    res = end.invoke(tex)
+                    if res is None:
+                        res = [end]
+                    tex.pushTokens(res)
+                    break
+
+        return tokens
 
 
 class IgnoreCommand(Command):
@@ -1022,7 +1115,7 @@ def expandDef(definition, params):
                 if t.catcode == Token.CC_PARAMETER:
                     output.append(t)
                 else:
-                    if params[int(t)] is not None:
+                    if int(t) < len(params) and params[int(t)] is not None:
                         # This is a pretty bad hack, but `ifx' commands
                         # need an argument to also be a token.  So we
                         # wrap them in a group here and let the
@@ -1078,8 +1171,8 @@ class NewCommand(Macro):
 
 class Definition(Macro):
     """ Superclass for all \\def-type commands """
-    args = None
-    definition = None
+    args = '' # type: str
+    definition = None # type: Optional[str]
 
     def invoke(self, tex):
         if not self.args: return self.definition
@@ -1128,8 +1221,7 @@ class Definition(Macro):
                 for t in tex.itertokens():
                     if t == a:
                         break
-                    else:
-                        param.append(t)
+                    param.append(t)
                 inparam = False
                 params.append(param)
 
@@ -1138,9 +1230,8 @@ class Definition(Macro):
                 for t in tex.itertokens():
                     if t == a:
                         break
-                    else:
-                        log.info('Arguments of "%s" don\'t match definition. Got "%s" but was expecting "%s" (%s).' % (name, t, a, ''.join(self.args)))
-                        break
+                    log.info('Arguments of "%s" don\'t match definition. Got "%s" but was expecting "%s" (%s).' % (name, t, a, ''.join(self.args)))
+                    break
 
         if inparam:
             params.append(tex.readArgument(parentNode=self,
@@ -1342,7 +1433,7 @@ class muglue(glue):
 
 class ParameterCommand(Command):
     args = '= value:Number'
-    value = count(0)
+    value = count(0) # type: Union[count, dimen]
 
     enabled = True
     _enablelevel = 0
@@ -1447,6 +1538,46 @@ class MuGlueCommand(RegisterCommand):
     def new(cls, *args, **kwargs):
         return muglue(*args, **kwargs)
 
+def numToRoman(x: int) -> str:
+    n, number = divmod(x, 1000)
+    roman = "M"*n
+    if number >= 900:
+        roman = roman + "CM"
+        number = number - 900
+    while number >= 500:
+        roman = roman + "D"
+        number = number - 500
+    if number >= 400:
+        roman = roman + "CD"
+        number = number - 400
+    while number >= 100:
+        roman = roman + "C"
+        number = number - 100
+    if number >= 90:
+        roman = roman + "XC"
+        number = number - 90
+    while number >= 50:
+        roman = roman + "L"
+        number = number - 50
+    if number >= 40:
+        roman = roman + "XL"
+        number = number - 40
+    while number >= 10:
+        roman = roman + "X"
+        number = number - 10
+    if number >= 9:
+        roman = roman + "IX"
+        number = number - 9
+    while number >= 5:
+        roman = roman + "V"
+        number = number - 5
+    if number >= 4:
+        roman = roman + "IV"
+        number = number - 4
+    while number > 0:
+        roman = roman + "I"
+        number = number - 1
+    return roman
 
 class Counter(object):
     """
@@ -1489,46 +1620,7 @@ class Counter(object):
 
     @property
     def Roman(self):
-        roman = ""
-        n, number = divmod(self.value, 1000)
-        roman = "M"*n
-        if number >= 900:
-            roman = roman + "CM"
-            number = number - 900
-        while number >= 500:
-            roman = roman + "D"
-            number = number - 500
-        if number >= 400:
-            roman = roman + "CD"
-            number = number - 400
-        while number >= 100:
-            roman = roman + "C"
-            number = number - 100
-        if number >= 90:
-            roman = roman + "XC"
-            number = number - 90
-        while number >= 50:
-            roman = roman + "L"
-            number = number - 50
-        if number >= 40:
-            roman = roman + "XL"
-            number = number - 40
-        while number >= 10:
-            roman = roman + "X"
-            number = number - 10
-        if number >= 9:
-            roman = roman + "IX"
-            number = number - 9
-        while number >= 5:
-            roman = roman + "V"
-            number = number - 5
-        if number >= 4:
-            roman = roman + "IV"
-            number = number - 4
-        while number > 0:
-            roman = roman + "I"
-            number = number - 1
-        return roman
+        return numToRoman(self.value)
 
     @property
     def roman(self):
@@ -1550,6 +1642,7 @@ class Counter(object):
 class TheCounter(Command):
     """ Base class for \\thecounter commands """
     format = None
+    trimLeft = False
 
     def invoke(self, tex):
 
@@ -1574,13 +1667,11 @@ class TheCounter(Command):
 
         t = re.sub(r'\$\{\s*(\w+)(?:\.(\w+))?\s*\}', counterValue, format)
 
-        # This is kind of a hack.  Since number formats aren't quite as
-        # flexible as in LaTeX, we have to do somethings heuristically.
-        # In this case, whenever a counter value comes out as a zero,
-        # just hank it out.  This is especially useful in document classes
-        # such as book and report which do this in the \thefigure format macro.
-
-        # REMARK: disabled this for Gerby
-        #t = re.sub(r'\b0[^\dA-Za-z]+', r'', t)
+        # If trimLeft is set to True, we remove any "0." at the beginning.
+        # Document classes such as book and report which do this in the
+        # \thefigure format macro.
+        if self.trimLeft:
+            while t.startswith("0."):
+                t = t[2:]
 
         return tex.textTokens(t)

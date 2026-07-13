@@ -1,13 +1,11 @@
-#!/usr/bin/env python
-
 """
 C.3.4 Accents and Special Symbols (p173)
 
 """
 
-from plasTeX import Command, Environment
-from plasTeX.Logging import getLogger
+from plasTeX import Command
 from plasTeX.DOM import Node, Text
+from typing import Optional
 
 #
 # Table 3.1: Accents
@@ -16,14 +14,25 @@ from plasTeX.DOM import Node, Text
 class Accent(Command):
     args = 'self'
     chars = {}
+    combining = ''
+    middle_combining = ''
 
     @property
     def str(self):
-        return type(self).chars.get(self.textContent.strip(), None)
+        content = self.textContent.strip()
+        if not content:
+            return self.macroName or ''
+        elif len(content) == 1:
+            return type(self).chars.get(content,
+                    content[0]+self.combining)
+        else:
+            return type(self).chars.get(content,
+                    content[0]+self.middle_combining+content[1:]+self.combining)
 
     @property
     def source(self):
-        return type(self).chars.get(self.textContent.strip(), None)
+        # gerby: emit the accented character itself as source (gerby-project#4)
+        return self.str
 
     @property
     def textContent(self):
@@ -43,11 +52,11 @@ class Accent(Command):
         if self.ownerDocument is not None:
             return self.ownerDocument.createTextNode(''.join(output))
         else:
-            return Text(''.join(output))        
+            return Text(''.join(output))
 
 
 class Grave(Accent):
-    macroName = '`'
+    macroName = '`' # type: Optional[str]
     chars = {
         'A': chr(192),
         'E': chr(200),
@@ -62,9 +71,10 @@ class Grave(Accent):
         'N': chr(504),
         'n': chr(505),
     }
+    combining = '\u0300'
 
 class Acute(Accent):
-    macroName = "'"
+    macroName = "'" # type: Optional[str]
     chars = {
         'A': chr(193),
         'E': chr(201),
@@ -93,9 +103,10 @@ class Acute(Accent):
         'G': chr(500),
         'g': chr(501),
     }
+    combining = '\u0300'
 
 class Circumflex(Accent):
-    macroName = '^'
+    macroName = '^' # type: Optional[str]
     chars = {
         'A': chr(194),
         'E': chr(202),
@@ -125,7 +136,7 @@ class Circumflex(Accent):
     }
 
 class Umlaut(Accent):
-    macroName = '"'
+    macroName = '"' # type: Optional[str]
     chars = {
         'A': chr(196),
         'E': chr(203),
@@ -140,9 +151,10 @@ class Umlaut(Accent):
         'y': chr(255),
         'Y': chr(376),
     }
+    combining = '\u030e'
 
 class Tilde(Accent):
-    macroName = '~'
+    macroName = '~' # type: Optional[str]
     chars = {
         'A': chr(195),
         'N': chr(209),
@@ -155,9 +167,10 @@ class Tilde(Accent):
         'U': chr(360),
         'u': chr(361),
     }
+    combining = '\u0303'
 
 class Macron(Accent):
-    macroName = '='
+    macroName = '=' # type: Optional[str]
     chars = {
         'A': chr(256),
         'a': chr(257),
@@ -172,9 +185,10 @@ class Macron(Accent):
         'Y': chr(562),
         'y': chr(563),
     }
+    combining = '\u0304'
 
 class Dot(Accent):
-    macroName = '.'
+    macroName = '.' # type: Optional[str]
     chars = {
         'C': chr(266),
         'c': chr(267),
@@ -216,6 +230,7 @@ class Dot(Accent):
         'Y': chr(7822),
         'y': chr(7823),
     }
+    combining = '\u0307'
 
 class u(Accent):
     chars = {
@@ -232,6 +247,7 @@ class u(Accent):
         'U': chr(364),
         'u': chr(365),
     }
+    combining = '\u0306'
 
 class v(Accent):
     chars = {
@@ -269,6 +285,7 @@ class v(Accent):
         'H': chr(542),
         'h': chr(543),
     }
+    combining = '\u030c'
 
 class H(Accent):
     chars = {
@@ -277,9 +294,11 @@ class H(Accent):
         'U': chr(368),
         'u': chr(369),
     }
+    combining = '\u030b'
 
 class t(Accent):
     chars = {}
+    middle_combining = '\u0361'
 
 class c(Accent):
     chars = {
@@ -302,6 +321,7 @@ class c(Accent):
         'E': chr(552),
         'e': chr(553),
     }
+    combining = '\u0327'
 
 class d(Accent):
     chars = {
@@ -344,6 +364,7 @@ class d(Accent):
         'Y': chr(7924),
         'y': chr(7925),
     }
+    combining = '\u0323'
 
 class b(Accent):
     chars = {
@@ -365,6 +386,7 @@ class b(Accent):
         'z': chr(7829),
         'h': chr(7830),
     }
+    combining = '\u0331'
 
 class k(Accent):
     chars = {
@@ -379,9 +401,11 @@ class k(Accent):
         'O': chr(490),
         'o': chr(491),
     }
+    combining = '\u0328'
 
 class r(Accent):
     chars = {}
+    combining = '\u030a'
 
 #
 # Table 3.2: Non-English Symbols (see Characters.py)
@@ -390,7 +414,7 @@ class r(Accent):
 class Symbol(Command):
     pass
 
-#class oe(Symbol): pass 
+#class oe(Symbol): pass
 #class OE(Symbol): pass
 #class ae(Symbol): pass
 #class AE(Symbol): pass

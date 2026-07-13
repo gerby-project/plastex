@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 from plasTeX.Renderers import Renderer as BaseRenderer
 from plasTeX import encoding
 import textwrap, re, string
@@ -79,7 +77,7 @@ class TextRenderer(BaseRenderer):
             block = self.blocks[int(m.group(2))]
             block = space + block.replace('\n', u'\n%s' % space)
 
-            s = block_re.sub('%s%s' % (before, block), s, 1)
+            s = s[:m.start()] + before + block + s[m.end():]
 
         # Clean up newlines
         return re.sub(r'\s*\n\s*\n(\s*\n)+', r'\n\n\n', s)
@@ -300,7 +298,7 @@ class TextRenderer(BaseRenderer):
         return mark
 
     def do_footnotetext(self, node):
-        self.do_footnote(self, node)
+        self.do_footnote(node)
         return ''
 
     def do_footnotemark(self, node):
@@ -379,7 +377,7 @@ class TextRenderer(BaseRenderer):
 
     do_tableofcontents = do_input = do_protect = do_let = do_def
     do_newcommand = do_hfill = do_hline = do_openout = do_renewcommand = do_def
-    do_write = do_hspace = do_appendix = do_global = do_noindent = do_def
+    do_write = do_appendix = do_global = do_noindent = do_def
     do_include = do_markboth = do_setcounter = do_refstepcounter = do_def
     do_medskip = do_smallskip = do_parindent = do_indent = do_setlength = do_def
     do_settowidth = do_addtolength = do_nopagebreak = do_newwrite = do_def

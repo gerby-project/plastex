@@ -1,6 +1,4 @@
-#!/usr/bin/env python
-
-from plasTeX import IgnoreCommand, Environment
+from plasTeX import IgnoreCommand
 
 class doublespacing(IgnoreCommand):
     pass

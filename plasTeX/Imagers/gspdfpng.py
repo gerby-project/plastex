@@ -1,7 +1,7 @@
-#!/usr/bin/env python
-
+import plasTeX.Imagers
 from plasTeX.Logging import getLogger
 from plasTeX.Imagers import Imager as _Imager
+import plasTeX
 import glob, sys
 
 status = getLogger('status')
@@ -17,8 +17,8 @@ class GSPDFPNG(_Imager):
     compiler = 'pdflatex'
     fileExtension = '.png'
 
-    def executeConverter(self, output):
-        res = plasTeX.Imagers.Imager.executeConverter(self, output)
+    def executeConverter(self, outfile=None):
+        res = plasTeX.Imagers.Imager.executeConverter(self, outfile)
         self.scaleImages()
         return res
 
@@ -27,12 +27,16 @@ class GSPDFPNG(_Imager):
         if plasTeX.Imagers.PILImage is not None:
             PILImage = plasTeX.Imagers.PILImage
             scaledown = 2.2
+            if 'Resampling' in dir(PILImage):
+                resampling = PILImage.Resampling.LANCZOS
+            else:
+                resampling = PILImage.ANTIALIAS
             for filename in glob.glob('img*.png'):
                 status.info('[%s]' % filename,)
                 img = plasTeX.Imagers.autoCrop(PILImage.open(filename),
                                                margin=3)[0]
                 width, height = [int(float(x)/scaledown) for x in img.size]
-                img = img.resize((width, height), PILImage.ANTIALIAS)
+                img = img.resize((width, height), resampling)
                 img = img.point(self.toWhite)
                 img.save(filename)
 

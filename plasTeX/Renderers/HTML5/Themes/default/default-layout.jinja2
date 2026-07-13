@@ -17,12 +17,21 @@
 <html lang="en">
 <head>
 {% if config.html5['use-mathjax'] %}
-<script type="text/x-mathjax-config">
+<script>
+  MathJax = { 
+    tex: {
 {% if config.html5['mathjax-dollars'] %}
-  MathJax.Hub.Config({tex2jax: {inlineMath: [['$','$'], ['\\(','\\)']]}});
+		    inlineMath: [['$','$'], ['\\(','\\)']],
 {% else %}
-  MathJax.Hub.Config({tex2jax: {inlineMath: [ ['\\(','\\)']]}});
+		    inlineMath: [['\\(','\\)']],
 {% endif %}
+{% if config['mathjax-macros']['macros'] %}
+      macros: { {% for key, val in config['mathjax-macros']['macros'].items() %}
+        {{ key }}: {{ val }},
+        {% endfor %}
+      } 
+{% endif %}
+	} }
 </script>
 <script type="text/javascript" src="{{ config.html5['mathjax-url'] }}">
 </script>
@@ -52,15 +61,22 @@
 </head>
 
 <body>
+{% if links.document.title or toc %}
+<header>
+{% if toc %}{{ icon('list-numbered', id='toc-toggle')}}{% endif %}
+<h1 id="doc_title"><a href="{{ links.home.url }}">{{ links.document.title }}</a></h1>
+</header>
+{% endif %}
+
+<div class="wrapper">
 {% if toc %}
 <nav class="toc">
-{{ icon('cross', class='close-toc') }}
 <ul class="sub-toc-0">
 {% for section in toc recursive %}
 <li class="{{ isActive(section) }}{{ isCurrent(section) }}">
   {% if section.tableofcontents %}
   <a href="{{ section.url }}">{{ tocEntry(section) }}</a>
-  {% if isActive(section) %}{{ icon('cross', class='expand-toc') }}{% else %}{{ icon('plus', class='expand-toc') }}{% endif %}
+  <span class="expand-toc">{% if isActive(section) %}▼{% else %}▶{% endif %}</span>
   <ul class="sub-toc-{{loop.depth}}{{ isActive(section) }}">
      {{ loop(section.tableofcontents) }}
   </ul>
@@ -69,16 +85,15 @@
   {% endif %}
  </li>
  {% endfor %}
+{% for item in rendererdata.get('extra_toc_items', []) %}
+<li {% if item.url == obj.url %}class="current"{% endif %}><a href="{{ item.url }}">{{ item.text }}</a></li>
+{% endfor %}
 </ul>
 </nav>
 {% endif %}
 
-<div class="wrapper{% if toc %} with-toc{% endif %}">
-{% if links.document.title or toc %}
-<header>
-<h1 id="doc_title">{{ links.document.title }}</h1>
-</header>
-{% endif %}
+<div class="content">
+<div class="content-wrapper">
 
 {% if obj.level >= config.html5['breadcrumbs-level'] %}
 <ul class="breadcrumbs">
@@ -92,18 +107,19 @@
 </ul>
 {% endif %}
 
-<div class="content">
+<div class="main-text">
 {{ obj }}
+</div> <!--main-text -->
 {% if obj.tableofcontents and obj.level <= config.html5['localtoc-level'] %}
 <nav class=local_toc>
 <ul>
 {% for section in obj.tableofcontents recursive %}
-  <li>	
+  <li>  
   <a href="{{ section.url }}">{{ tocEntry(section) }}</a>
   {% if section.tableofcontents %}
-	<ul>
-		 {{ loop(section.tableofcontents) }}
-	</ul>
+        <ul>
+                 {{ loop(section.tableofcontents) }}
+        </ul>
   {% endif %}
   </li>
 {% endfor %}
@@ -119,7 +135,9 @@
 </ol>
 </footer>
 {% endif %}
-</div>
+</div> <!-- content-wrapper -->
+</div> <!-- content -->
+</div> <!-- wrapper -->
 
 <nav class="prev_up_next">
 {% for nav in rendererdata.get('extra-nav', []) %}
@@ -137,12 +155,10 @@
   {% if links.index.url %}
   <a href="{{ links.index.url }}" class="index">Index</a>
   {% endif %}
-{% if toc %}{{ icon('list-numbered', id='toc-toggle')}}{% endif %}
 </nav>
 
 {% for js in rendererdata.get('js', []) %}
 <script type="text/javascript" src="js/{{ js }}"></script>
 {% endfor %}
-</div>
 </body>
 </html>

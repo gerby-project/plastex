@@ -1,14 +1,13 @@
-#!/usr/bin/env python
-
 """
 C.11.3 Bibliography and Citation (p208)
 
 """
 
 import plasTeX
-from plasTeX.Base.LaTeX.Sectioning import chapter, section
-from plasTeX import Command, Environment
+from plasTeX.Base.LaTeX.Sectioning import chapter
+from plasTeX import Command
 from plasTeX.Base.LaTeX.Lists import List
+
 
 log = plasTeX.Logging.getLogger()
 
@@ -66,6 +65,10 @@ class thebibliography(List):
         @property
         def id(self):
             return self.attributes['key']
+
+        @id.setter
+        def id(self, value):
+            self.attributes['key'] = value
 
         @property
         def bibcite(self):

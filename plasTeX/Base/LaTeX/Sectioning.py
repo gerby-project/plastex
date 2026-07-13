@@ -1,14 +1,9 @@
-#!/usr/bin/env python
-
 """
 C.4 Sectioning and Table of Contents (p174)
 
 """
 
-from plasTeX import Command, Environment, TeXFragment
-from plasTeX.Logging import getLogger
-
-log = getLogger()
+from plasTeX import Command
 
 #
 # C.4.1 Sectioning Commands
@@ -263,14 +258,11 @@ class SectionUtils(object):
 
         # Get user-defined links
         links = {}
-        if 'links' in list(self.config.keys()):
-            for key in list(self.config['links'].keys()):
-                if '-' not in key:
-                    continue
-                newkey, type = key.strip().split('-',1)
-                if newkey not in list(links.keys()):
-                    links[newkey] = {}
-                links[newkey][type] = self.config['links'][key]
+        for key, value in self.config['links']['links'].items():
+            newkey, type = key.strip().split('-',1)
+            if newkey not in links:
+                links[newkey] = {}
+            links[newkey][type] = value
 
         # Set links in nav object
         for key, value in list(links.items()):

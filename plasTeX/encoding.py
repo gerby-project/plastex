@@ -1,6 +1,3 @@
-#!/usr/bin/env python
-
-import locale
 import string
 
 def stringletters():

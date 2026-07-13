@@ -1,11 +1,9 @@
-#!/usr/bin/env python
-
 """
 Implementation of the nameref package
 
 """
 
-from plasTeX import Command, Environment
+from plasTeX import Command
 
 class nameref(Command):
     args = 'label:idref'

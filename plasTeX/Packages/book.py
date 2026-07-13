@@ -1,7 +1,4 @@
-#!/usr/bin/env python
-
-import os, glob
-from plasTeX import Command, Environment, TheCounter
+from plasTeX import Command, TheCounter
 
 def ProcessOptions(options, document):
     context = document.context
@@ -38,9 +35,9 @@ def ProcessOptions(options, document):
 
     # Floats
     context.newcounter('figure', resetby='chapter',
-                       format='${thechapter}.${figure}')
+                       format='${thechapter}.${figure}', trimLeft=True)
     context.newcounter('table', resetby='chapter',
-                       format='${thechapter}.${table}')
+                       format='${thechapter}.${table}', trimLeft=True)
     context.newcounter('topnumber')
     context.newcounter('bottomnumber')
     context.newcounter('totalnumber')

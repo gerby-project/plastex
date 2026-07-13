@@ -11,7 +11,7 @@ import subprocess
 import shutil
 import tempfile
 from plasTeX import Environment, NoCharSubEnvironment, Macro
-from plasTeX.PackageResource import PackageResource
+from plasTeX.PackageResource import PackageProcessFilecontents
 
 from plasTeX.Logging import getLogger
 log = getLogger()
@@ -113,11 +113,19 @@ def tikzConvert(document, content, envname, placeholder):
         result = str(soup)
     return result
 
+def getConfig(document, key, default=''):
+    """Read a tikz option from the html5 config section, which is absent
+    when plasTeX is used as a library rather than through the CLI."""
+    try:
+        return document.config['html5'].get(key) or default
+    except KeyError:
+        return default
+
 def ProcessOptions(options, document):
     """This is called when the package is loaded."""
 
     try:
-        with open(document.config['html5']['tikz-template'], "r") as file:
+        with open(getConfig(document, 'tikz-template'), "r") as file:
             template = file.read()
     except IOError:
         log.info('Using default TikZ template.')
@@ -126,21 +134,19 @@ def ProcessOptions(options, document):
     document.userdata['tikzpicture'] = {
             'template': Template(template),
             'tmp_dir': tempfile.mkdtemp(),
-            'compiler': document.config['html5']['tikz-compiler'],
-            'pdf2svg': document.config['html5']['tikz-converter'],
+            'compiler': getConfig(document, 'tikz-compiler', 'pdflatex'),
+            'pdf2svg': getConfig(document, 'tikz-converter', 'pdf2svg'),
             }
 
     def convert(document, content):
         return tikzConvert(document, content, 'tikzpicture', 'TikZ picture')
 
-    cb = PackageResource(
+    cb = PackageProcessFilecontents(
             renderers='html5',
-            key='processFileContents',
             data=convert)
     document.addPackageResource(cb)
 
-    cb = PackageResource(
+    cb = PackageProcessFilecontents(
             renderers='gerby',
-            key='processFileContents',
             data=convert)
     document.addPackageResource(cb)

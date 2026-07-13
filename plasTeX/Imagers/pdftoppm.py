@@ -1,8 +1,5 @@
-#!/usr/bin/env python
-
-import os
-import re
 import subprocess
+import shlex
 
 from plasTeX.Imagers import Imager as _Imager
 
@@ -26,16 +23,18 @@ class pdftoppm(_Imager):
                                 stdout=subprocess.PIPE,
                                 stderr=subprocess.STDOUT,
                                 universal_newlines=True)
-        return 'pdftoppm' in proc.communicate()
+        return 'pdftoppm' in str(proc.communicate())
 
-    def executeConverter(self, output):
+    def executeConverter(self, outfile=None):
         """
         We need to override this because plasTeX always puts the input
         file at the end of the command-line.  We also need to return the
         list of images.
 
         """
-        open('images.out', 'wb').write(output.read())
+        if outfile is None:
+            outfile = self.tmpFile.with_suffix('.pdf')
+
         options = ''
         if self._configOptions:
             for opt, value in self._configOptions:
@@ -43,7 +42,15 @@ class pdftoppm(_Imager):
                 if ' ' in value:
                     value = '"%s"' % value
                 options += '%s %s ' % (opt, value)
-        rc = os.system('%s %s%s img' % (self.command, options, 'images.out'))
-        return rc, [f for f in os.listdir('.') if re.match(r'^img-\d+\.\w+$', f)]
+        subprocess.run(shlex.split('%s %s%s img' % (self.command, options, outfile)), check=True)
+
+        images = []
+        with open("images.csv") as fh:
+            lines = fh.readlines()
+        for line in lines:
+            page, output, _ = line.split(",")
+            images.append(["img-{}.png".format(page), output.rstrip()])
+
+        return images
 
 Imager = pdftoppm

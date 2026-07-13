@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 import unittest
 from unittest import TestCase
 from plasTeX.DOM import *
@@ -22,12 +20,6 @@ class DocumentTest(TestCase):
         doc = Document()
         node = doc.createTextNode('foo')
         assert isinstance(node, Text)
-        assert node == 'foo'
-    
-    def testCreateComment(self):
-        doc = Document()
-        node = doc.createComment('foo')
-        assert isinstance(node, Comment)
         assert node == 'foo'
 
     def testCreateCDATASection(self):

@@ -1,13 +1,11 @@
-#!/usr/bin/env python
-
 """
 B.3 Parameters
 
 """
 
 from datetime import datetime
-from plasTeX import ParameterCommand, CountCommand, DimenCommand
-from plasTeX import MuDimenCommand, GlueCommand, MuGlueCommand
+from plasTeX import ParameterCommand, DimenCommand
+from plasTeX import GlueCommand, MuGlueCommand
 
 #
 # TeX parameters (see The TeXbook, page 272)

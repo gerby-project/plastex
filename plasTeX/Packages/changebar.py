@@ -1,9 +1,4 @@
-#!/usr/bin/env python
-
 from plasTeX import Command, Environment, DimenCommand, Counter
-
-def ProcessOptions(options, document):
-    context = document.context
 
 class cbstart(Command):
     def invoke(self, tex):

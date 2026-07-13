@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 """
 C.13.3 Boxes (p217)
 
@@ -8,7 +6,7 @@ C.13.3 Boxes (p217)
 from plasTeX.Base.TeX.Primitives import BoxCommand
 from plasTeX import Command, Environment
 from plasTeX import DimenCommand, GlueCommand
-from plasTeX.Logging import getLogger
+
 
 class TextBoxCommand(Command):
 
@@ -56,7 +54,7 @@ class parbox(Command):
     args = '[ pos:str ] width:dimen self'
 
 class minipage(Environment):
-    args = '[ pos:str ] width:dimen'
+    args = '[ pos:str ] [ height:dimen ] [ innerpos:str ] width:dimen'
 
 class rule(Command):
     args = '[ raise:dimen ] width:dimen height:dimen'

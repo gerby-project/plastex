@@ -24,6 +24,7 @@ div[class$='_thmwrapper']:target
 
 div[class$='_thmheading']
 {
+    display: flex;
     font-weight: bold;
     line-height: 150%;
 }
@@ -47,6 +48,12 @@ div[class$='_thmcontent']
     padding-left: 1rem;
 }
 
+span[class$='_thmlabel']
+{
+    margin-left: .5rem;
+    margin-right: .5rem;
+}
+
 // Proofs
 
 div[class$='proof_heading']
@@ -61,11 +68,13 @@ div.proof_content
 {
     font-weight: normal;
 
-    display: none;
-
     margin-left: 1rem;
     padding-top: .5rem;
     padding-left: 1rem;
+}
+
+span.expand-proof {
+    font-size: 80%;
 }
 
 div.hilite
@@ -122,7 +131,7 @@ div.modal-content
 
 				background: $doc-title-background;
 				color: $doc-title-color;
-				text-shadow: 1px 2px 0px rgba(0,0,0,0.8);
+				text-shadow: $header-text-shadow;
         display: flex;
         flex-direction: row;
 
@@ -147,7 +156,7 @@ div.modal-content
 
             text-decoration: none;
 
-            color: #fff;
+            color: $doc-title-color;
             cursor: pointer;
         }
         h1
@@ -185,12 +194,12 @@ a.icon
     background-color: Transparent;
 }
 
-div[class$='_thmheading']:hover div.thm_icons
+div[class$='_thmheading']:hover div.thm_header_hidden_extras
 {
     display: inline-block;
 }
 
-div.thm_icons
+div.thm_header_hidden_extras
 {
     display: none;
 }

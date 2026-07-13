@@ -1,5 +1,3 @@
-#!/usr/bin/env python
-
 from plasTeX.Renderers import Renderer as BaseRenderer
 from plasTeX import encoding
 import textwrap, re, string
@@ -294,7 +292,7 @@ class ManPageRenderer(BaseRenderer):
     
     do_tableofcontents = do_input = do_protect = do_let = do_def
     do_newcommand = do_hfill = do_hline = do_openout = do_renewcommand = do_def
-    do_write = do_hspace = do_appendix = do_global = do_noindent = do_def
+    do_write = do_appendix = do_global = do_noindent = do_def
     do_include = do_markboth = do_setcounter = do_refstepcounter = do_def
     do_medskip = do_smallskip = do_parindent = do_indent = do_setlength = do_def
     do_settowidth = do_addtolength = do_nopagebreak = do_newwrite = do_def

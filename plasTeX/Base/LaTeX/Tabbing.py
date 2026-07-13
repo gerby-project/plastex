@@ -1,12 +1,10 @@
-#!/usr/bin/env python
-
 """
 C.10.1 The tabbing Environment (p201)
 
 """
 
 from plasTeX import Command, Environment, DimenCommand
-from plasTeX.Logging import getLogger
+
 
 class tabbing(Environment):
     blockType = True

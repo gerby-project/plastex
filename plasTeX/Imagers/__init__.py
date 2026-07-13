@@ -1,14 +1,14 @@
-#!/usr/bin/env python
-
-import os, time, tempfile, shutil, re, string, pickle
-try: from hashlib import md5
-except ImportError: from md5 import new as md5
-from plasTeX.Logging import getLogger
+from pathlib import Path
+import os, tempfile, shutil, re, string, pickle
+from hashlib import md5
 from io import StringIO
-from plasTeX.Filenames import Filenames
-from collections import OrderedDict
 import subprocess
 import shlex
+from typing import List, Tuple, Optional, Dict, Any
+
+from plasTeX import Macro
+from plasTeX.Filenames import Filenames
+from plasTeX.Logging import getLogger
 
 log = getLogger()
 depthlog = getLogger('render.images.depth')
@@ -19,7 +19,7 @@ try:
     from PIL import Image as PILImage
     from PIL import ImageChops as PILImageChops
 except ImportError:
-    PILImage = PILImageChops = None
+    PILImage = PILImageChops = None  # type: ignore
 
 def autoCrop(im, bgcolor=None, margin=0):
     """
@@ -84,7 +84,6 @@ def autoCrop(im, bgcolor=None, margin=0):
             bbox = tuple([max(0,x) for x in bbox])
         return im.crop(bbox), tuple([abs(x-y) for x,y in zip(origbbox,bbox)]), bgcolor
     return PILImage.new("RGB", (1,1), bgcolor), (0,0,0,0), bgcolor
-    return None, None, bgcolor # no contents
 
 class Box(object):
     pass
@@ -166,7 +165,7 @@ class DimensionPlaceholder(str):
 class Image(object):
     """ Generic image object """
 
-    def __init__(self, filename, config, width=None, height=None, alt=None,
+    def __init__(self, filename, config: Dict[str, Any], width=None, height=None, alt=None,
                        depth=None, longdesc=None):
         self.filename = filename
         self.path = os.path.join(os.getcwd(), self.filename)
@@ -181,44 +180,44 @@ class Image(object):
         self.bitmap = self
         self.checksum = None
 
-    def height():
-        def fget(self):
-            return getattr(self.bitmap, '_height', None)
-        def fset(self, value):
-            if value is None:
-                self._height = value
-            elif isinstance(value, DimensionPlaceholder):
-                self._height = value
-            else:
-                self._height = Dimension(value)
-        return locals()
-    height = property(**height())
+    @property
+    def height(self):
+        return getattr(self.bitmap, '_height', None)
 
-    def width():
-        def fget(self):
-            return getattr(self.bitmap, '_width', None)
-        def fset(self, value):
-            if value is None:
-                self._width = value
-            elif isinstance(value, DimensionPlaceholder):
-                self._width = value
-            else:
-                self._width = Dimension(value)
-        return locals()
-    width = property(**width())
+    @height.setter
+    def height(self, value):
+        if value is None:
+            self._height = value
+        elif isinstance(value, DimensionPlaceholder):
+            self._height = value
+        else:
+            self._height = Dimension(value)
 
-    def depth():
-        def fget(self):
-            return getattr(self, '_depth', None)
-        def fset(self, value):
-            if value is None:
-                self._depth = value
-            elif isinstance(value, DimensionPlaceholder):
-                self._depth = value
-            else:
-                self._depth = Dimension(value)
-        return locals()
-    depth = property(**depth())
+    @property
+    def width(self):
+        return getattr(self.bitmap, '_width', None)
+
+    @width.setter
+    def width(self, value):
+        if value is None:
+            self._width = value
+        elif isinstance(value, DimensionPlaceholder):
+            self._width = value
+        else:
+            self._width = Dimension(value)
+
+    @property
+    def depth(self):
+        return getattr(self, '_depth', None)
+
+    @depth.setter
+    def depth(self, value):
+        if value is None:
+            self._depth = value
+        elif isinstance(value, DimensionPlaceholder):
+            self._depth = value
+        else:
+            self._depth = Dimension(value)
 
     @property
     def url(self):
@@ -236,7 +235,8 @@ class Image(object):
 
         # Crop an SVG image
         if os.path.splitext(self.path)[-1] in ['.svg']:
-            svg = open(self.path,'r').read()
+            with open(self.path,'r') as fh:
+                svg = fh.read()
 
             self.width = 0
             width = re.search(r'width=(?:\'|")([^\d\.]+)\w*(?:\'|")', svg)
@@ -413,6 +413,25 @@ class Image(object):
 
         return im, depth
 
+def run_command(cmd: str, env: Optional[Dict] = None):
+    p = subprocess.Popen(shlex.split(cmd),
+                 stdin=subprocess.DEVNULL,
+                 stdout=subprocess.PIPE,
+                 stderr=subprocess.STDOUT,
+                 universal_newlines=True,
+                 env=env or os.environ)
+    try:
+        if p.stdout is not None:
+            for line in p.stdout:
+                imagelog.info(line.strip())
+    except Exception as e:
+        imagelog.error('Failed to read output from {}\n{}'.format(cmd, str(e)))
+
+    p.wait()
+    if p.stdout is not None:
+        p.stdout.close()
+    if p.returncode:
+        raise subprocess.CalledProcessError(p.returncode, cmd)
 
 class Imager(object):
     """ Generic Imager """
@@ -424,8 +443,11 @@ class Imager(object):
     # The compiler command used to compile the LaTeX document
     compiler = 'latex'
 
+    # The filename for temporary LaTeX source
+    tmpFile = Path('images.tex')
+
     # Verification command to determine if the imager is available
-    verification = ''
+    verifications = []
 
     fileExtension = '.png'
 
@@ -449,7 +471,8 @@ class Imager(object):
                                           self.__class__.__name__+'.images'))
         if self.config['images']['cache'] and os.path.isfile(self._filecache):
             try:
-                self._cache = pickle.load(open(self._filecache, 'r'))
+                with open(self._filecache, 'rb') as fh:
+                    self._cache = pickle.load(fh)
                 for key, value in list(self._cache.items()):
                     if not os.path.isfile(value.filename):
                         del self._cache[key]
@@ -458,20 +481,20 @@ class Imager(object):
             except ImportError:
                 os.remove(self._filecache)
 
-        # List of images in the order that they appear in the LaTeX file
-        self.images = OrderedDict()
+        # List of images
+        self.images = {}
 
         # Images that are simply copied from the source directory
-        self.staticimages = OrderedDict()
+        self.staticimages = {}
 
         # Filename generator
-        self.newFilename = Filenames(self.config['images'].get('filenames', raw=True),
+        self.newFilename = Filenames(self.config['images'].get('filenames'),
                            variables={'jobname':document.userdata.get('jobname','')},
                            extension=self.fileExtension, invalid=usednames)
 
         # Start the document with a preamble
         self.source = StringIO()
-        self.source.write('\\scrollmode\n')
+        self.source.write('\\nonstopmode\n')
         self.writePreamble(document)
         self.source.write('\\begin{document}\n')
 
@@ -507,24 +530,36 @@ class Imager(object):
 #       self.source.write('\\showboxdepth=\maxdimen\n')
 #       self.source.write('\\newenvironment{plasTeXimage}[1]{\\def\\@current@file{#1}\\thispagestyle{empty}\\def\\@eqnnum{}\\setbox0=\\vbox\\bgroup}{\\egroup\\typeout{imagebox:\\@current@file(\\the\\ht0+\\the\\dp0)}\\box0\\newpage}')
 
-        self.source.write('\\@ifundefined{plasTeXimage}{'
-                          '\\newenvironment{plasTeXimage}[1]{' +
-                          '\\vfil\\break\\plasTeXregister' +
-                          '\\thispagestyle{empty}\\def\\@eqnnum{}\\def\\tagform@{\\@gobble}' +
-                          '\\ignorespaces}{}}{}\n')
-        self.source.write('\\@ifundefined{plasTeXregister}{' +
-                          '\\def\\plasTeXregister{\\parindent=-0.5in\\ifhmode\\hrule' +
-                          '\\else\\vrule\\fi height 2pt depth 0pt ' +
-                          'width 2pt\\hskip2pt}}{}\n')
+        self.source.write(r'''
+\newwrite\imager@log
+\immediate\openout\imager@log=images.csv
+\@ifundefined{plasTeXimage}{%
+\newenvironment{plasTeXimage}[2]{%
+\vfil\break\plasTeXregister%
+\thispagestyle{empty}\def\@eqnnum{}\def\tagform@{\@gobble}%
+\write\imager@log{\arabic{page},#1,#2}%
+\ignorespaces}{}}{}
+''')
+        self.source.write(r'''
+\@ifundefined{plasTeXregister}{%
+\def\plasTeXregister{\parindent=-0.5in\ifhmode\hrule%
+\else\vrule\fi height 2pt depth 0pt %
+width 2pt\hskip2pt}}{}
+''')
+
+        for extra in document.userdata.get('imager_preamble_extra', []):
+            self.source.write(extra)
 
     def verify(self):
         """ Verify that this commmand works on this machine """
-        if self.verification:
-            proc = os.popen(self.verification)
-            proc.read()
-            if not proc.close():
-                return True
-            return False
+        if self.verifications:
+            for command in self.verifications:
+                proc = os.popen(command)
+                proc.read()
+                if proc.close():
+                    return False
+
+            return True
 
         if not self.command.strip():
             return False
@@ -550,14 +585,6 @@ class Imager(object):
 
     def close(self):
         """ Invoke the rendering code """
-        # Finish the document
-        self.source.write('\n\\end{document}\\endinput')
-
-        for value in list(self._cache.values()):
-            if value.checksum and os.path.isfile(value.path):
-                 d = md5(open(value.path,'r').read()).digest()
-                 if value.checksum != d:
-                     log.warning('The image data for "%s" on the disk has changed.  You may want to clear the image cache.' % value.filename)
         # Bail out if there are no images
         if not self.images:
             return
@@ -565,92 +592,156 @@ class Imager(object):
         if not self.enabled:
             return
 
+        # Finish the document
+        save_file = self.config["images"]["save-file"]
+
+        self.source.write('\n\\end{document}\\endinput')
+
+        for value in list(self._cache.values()):
+            if value.checksum and os.path.isfile(value.path):
+                with open(value.path,'r') as fh:
+                    d = md5().digest(fh.read())
+                if value.checksum != d:
+                    log.warning('The image data for "%s" on the disk has changed.  You may want to clear the image cache.' % value.filename)
+
+        cwd = Path.cwd()
+
+        folders = []
+        root = Path(self.ownerDocument.userdata.get('working-dir', '.')).absolute()
+        for folder in os.environ.get('TEXINPUTS', '').split(os.pathsep):
+            if folder.strip():
+                folders.append(str((root/folder)))
+        new_texinputs = os.pathsep.join(['.'] + folders + [str(root)]) + os.pathsep
+
+        # Make a temporary directory to work in. We don't use
+        # `with TemporaryDirectory() as tempdir` because we want to retain the
+        # possibility of keeping the temporary directory.
+        tempdir = Path(tempfile.mkdtemp())
+        os.chdir(str(tempdir))
+
         # Compile LaTeX source, then convert the output
         self.source.seek(0)
-        output = self.compileLatex(self.source.read())
-        if output is None:
-            log.error('Compilation of the document containing the images failed.  No output file was found.')
+        (_, fname) = tempfile.mkstemp('.tex', 'images-', '.', True)
+        self.tmpFile = Path(fname)
+        self.tmpFile.write_text(self.source.read(), encoding=self.config['files']['input-encoding'])
+
+        def on_error(e):
+            log.info("Source files for the failing images are saved in folder {}".format(tempdir))
+            os.chdir(str(cwd))
+
+        try:
+            self.compileLatex(texinputs=new_texinputs)
+        except Exception as e:
+            log.error("Failed to compile image: {}".format(e))
+            log.info("The above command was ran with the environment variable:")
+            log.info("TEXINPUTS={}".format(new_texinputs))
+            on_error(e)
             return
 
-        self.convert(output)
+        # Execute converter
+        try:
+            images = self.executeConverter()
+        except Exception as e:
+            log.error("Failed to convert image: {}".format(e))
+            on_error(e)
+            return
+
+        os.chdir(str(cwd))
+
+        if len(images) != len(self.images):
+            save_file = True
+            log.error('The number of images generated (%d) and the number of images requested (%d) is not the same.' % (len(images), len(self.images)))
+
+        if PILImage is None and type(self) is not VectorImager:
+            log.warning('PIL (Python Imaging Library) is not installed.  ' +
+                        'Images will not be cropped.')
+
+
+        # Move images to their final location
+        for src, dest in images:
+            try:
+                dest_img = self.images[dest]
+            except KeyError:
+                save_file = True
+                log.warning("Generated extra image: {} => {}".format(src, dest))
+                continue
+
+            if not (cwd / dest).parent.is_dir():
+                (cwd / dest).parent.mkdir(parents=True)
+
+            # Move the image
+            try:
+                shutil.copy2(str(tempdir / src), str(cwd / dest))
+            except OSError:
+                shutil.copy(str(tempdir / src), str(cwd / dest))
+
+            # Crop the image
+            try:
+                dest_img.crop()
+                status.dot()
+            except Exception as msg:
+                import traceback
+                traceback.print_exc()
+                log.warning('failed to crop %s (%s)', dest, msg)
 
         for value in list(self._cache.values()):
             if value.checksum is None and os.path.isfile(value.path):
-                 value.checksum = md5(open(value.path,'rb').read()).digest()
+                with open(value.path,'rb') as fh:
+                    value.checksum = md5(fh.read()).digest()
 
         if not os.path.isdir(os.path.dirname(self._filecache)):
             os.makedirs(os.path.dirname(self._filecache))
-        pickle.dump(self._cache, open(self._filecache,'wb'))
 
-    def compileLatex(self, source):
+        with open(self._filecache,'wb') as fh:
+            pickle.dump(self._cache, fh)
+
+        if save_file:
+            log.warning("Imager temp files saved at {}".format(tempdir))
+        else:
+            shutil.rmtree(str(tempdir), True)
+
+    def getCompiler(self):
+        return self.config['images']['compiler'] or self.compiler
+
+    def compileLatex(self, texinputs=''):
         """
-        Compile the LaTeX source
+        Compile the LaTeX source, located at self.tmpFile
 
-        Arguments:
-        source -- the LaTeX source to compile
-
-        Returns:
-        file object corresponding to the output from LaTeX
-
+        This should raise an exception if the compilation fails.
         """
-        cwd = os.getcwd()
-        # Make a temporary directory to work in
-        tempdir = tempfile.mkdtemp()
-        os.chdir(tempdir)
+        env = os.environ.copy()
+        env['TEXINPUTS'] = texinputs
+        run_command(r'%s %s' % (self.getCompiler(), self.tmpFile.name), env=env)
 
-        filename = 'images.tex'
-        # Write LaTeX source file
-        encoding = self.config['files']['input-encoding']
-        self.source.seek(0)
-        with open(filename, 'w', encoding=encoding) as f:
-            f.write(self.source.read())
-
-        # Run LaTeX
-        os.environ['SHELL'] = '/bin/sh'
-        program = self.config['images']['compiler']
-        if not program:
-            program = self.compiler
-
-        cmd = r'%s %s' % (program, filename)
-        p = subprocess.Popen(shlex.split(cmd),
-                     stdout=subprocess.PIPE,
-                     stderr=subprocess.STDOUT,
-                     universal_newlines=True
-                     )
-        while True:
-            line = p.stdout.readline()
-            done = p.poll()
-            if line:
-                imagelog.info(line.strip())
-            elif done is not None:
-                break
-
-        output = None
-        for ext in ['.dvi','.pdf','.ps']:
-            if os.path.isfile('images'+ext):
-                output = open('images'+ext, 'rb')
-                break
-
-        # Change back to original working directory
-        os.chdir(cwd)
-
-        return output
-
-    def executeConverter(self, output):
+    def executeConverter(self, outfile: Optional[str] = None) -> List[Tuple[str, str]]:
         """
         Execute the actual image converter
 
+        The converter should read `images.csv`. Each row of `images.csv` is a
+        triple `n,dest,scale`, where `n` is the page that contains the image, `dest`
+        is the destination filename and `scale` is the requested scaling factor.
+        The converter then converts the output on page `n` to an image file.
+
         Arguments:
-        output -- file object pointing to the rendered LaTeX output
+        outfile -- output file from latex to convert from. If left None, it
+        uses the default value. This is usually None.
 
         Returns:
-        two-element tuple.  The first element is the return code of the
-        command.  The second element is the list of filenames generated.
-        If the default filenames (i.e. img001.png, img002.png, ...) are
-        used, you can simply return None.
+        A list of pairs (src, dest), where src is the name of the image file
+        produced, and dest is the destination filename.
 
+        This should raise an exception if the conversion fails.
         """
-        open('images.out', 'wb').write(output.read())
+        if outfile is None:
+            for ext in ['.dvi', ".pdf", ".ps"]:
+                if self.tmpFile.with_suffix(ext).is_file():
+                    outfile = self.tmpFile.with_suffix(ext).name
+                    break
+
+        if outfile is None:
+            imagelog.warning("Missing image output file")
+            raise Exception
+
         options = ''
         if self._configOptions:
             for opt, value in self._configOptions:
@@ -659,88 +750,17 @@ class Imager(object):
                     value = '"%s"' % value
                 options += '%s %s ' % (opt, value)
 
-        cmd = r'%s %s%s' % (self.command, options, 'images.out')
-        p = subprocess.Popen(shlex.split(cmd),
-                             stdout=subprocess.PIPE,
-                             stderr=subprocess.STDOUT,
-                             universal_newlines=True
-                           )
-        done = None
-        while True:
-            line = p.stdout.readline()
-            done = p.poll()
-            if line:
-                imagelog.info(str(line.strip()))
-            elif done is not None:
-                break
-        return done, None
+        run_command(r'%s %s%s' % (self.command, options, outfile))
 
-    def convert(self, output):
-        """
-        Convert the output from LaTeX into images
+        images = []
+        with open("images.csv") as fh:
+            for line in fh.readlines():
+                page, output, _ = line.split(",")
+                images.append(("img{}{}".format(page, self.fileExtension), output.rstrip()))
 
-        Arguments:
-        output -- output file object
+        return images
 
-        """
-        if not self.command and self.executeConverter is Imager.executeConverter:
-            log.warning('No imager command is configured.  ' +
-                        'No images will be created.')
-            return
-
-        cwd = os.getcwd()
-
-        # Make a temporary directory to work in
-        tempdir = tempfile.mkdtemp()
-        os.chdir(tempdir)
-
-        # Execute converter
-        rc, images = self.executeConverter(output)
-        if rc:
-            log.warning('Image converter did not exit properly.  ' +
-                        'Images may be corrupted or missing.')
-
-        # Get a list of all of the image files
-        if images is None:
-            images = [f for f in os.listdir('.')
-                            if re.match(r'^img\d+\.\w+$', f)]
-        if len(images) != len(self.images):
-            log.warning('The number of images generated (%d) and the number of images requested (%d) is not the same.' % (len(images), len(self.images)))
-
-        # Sort by creation date
-        #images.sort(lambda a,b: cmp(os.stat(a)[9], os.stat(b)[9]))
-
-        images.sort(key=lambda x: int(re.search(r'(\d+)\.\w+$',x).group(1)))
-        os.chdir(cwd)
-
-        if PILImage is None:
-            log.warning('PIL (Python Imaging Library) is not installed.  ' +
-                        'Images will not be cropped.')
-
-        # Move images to their final location
-        for src, dest in zip(images, list(self.images.values())):
-            # Move the image
-            directory = os.path.dirname(dest.path)
-            if directory and not os.path.isdir(directory):
-                os.makedirs(directory)
-            try:
-                shutil.copy2(os.path.join(tempdir,src), dest.path)
-            except OSError:
-                shutil.copy(os.path.join(tempdir,src), dest.path)
-
-            # Crop the image
-            try:
-                dest.crop()
-                status.dot()
-            except Exception as msg:
-                import traceback
-                traceback.print_exc()
-                log.warning('failed to crop %s (%s)', dest.path, msg)
-
-        # Remove temporary directory
-        shutil.rmtree(tempdir, True)
-
-    def writeImage(self, filename, code, context):
+    def writeImage(self, filename: str, code: str, context: str='', scale: float=1.0) -> None:
         """
         Write LaTeX source for the image
 
@@ -750,14 +770,18 @@ class Imager(object):
         context -- the LaTeX code of the context of the image
 
         """
-        self.source.write('%s\n\\begin{plasTeXimage}{%s}\n%s\n\\end{plasTeXimage}\n' % (context, filename, code))
+        self.source.write('%s\n\\begin{plasTeXimage}{%s}{%s}\n%s\n\\end{plasTeXimage}\n' % (context, filename, scale, code))
 
-    def newImage(self, text, context='', filename=None):
+    def get_scale(self, nodeName: str) -> float:
+        return self.config["images"]["scales"].get(nodeName,
+            self.config["images"]["scale-factor"])
+
+    def newImage(self, node: Macro, context: str='', filename: Optional[str]=None) -> Image:
         """
         Invoke a new image
 
         Required Arguments:
-        text -- the LaTeX source to be rendered in an image
+        node -- the node to be rendered in an image
 
         Keyword Arguments:
         context -- LaTeX source to be executed before the image
@@ -768,25 +792,25 @@ class Imager(object):
             should not include the file extension.
 
         """
+        text = node.source
         # Convert ligatures back to original string
         for dest, src in self.ownerDocument.charsubs:
             text = text.replace(src, dest)
 
-        key = text
-
         # See if this image has been cached
-        if key in list(self._cache.keys()):
-            return self._cache[key]
+        if text in self._cache:
+            return self._cache[text]
 
-        # Generate a filename
-        if not filename:
-            filename = self.newFilename()
+        # Generate a filename if none has been provided
+        filename = filename or self.newFilename()
+
+        scale = self.get_scale(node.nodeName) # type: ignore
 
         # Add the image to the current document and cache
         #log.debug('Creating %s from %s', filename, text)
-        self.writeImage(filename, text, context)
+        self.writeImage(filename, text, context, scale)
 
-        img = Image(filename, self.config['images'])
+        img = Image(filename, dict(self.config['images']))
 
         # Populate image attrs that will be bound later
         if self.imageAttrs:
@@ -799,7 +823,7 @@ class Imager(object):
                     value.imageUnits = self.imageUnits
                     setattr(img, name, value)
 
-        self.images[filename] = self._cache[key] = img
+        self.images[filename] = self._cache[text] = img
         return img
 
     def getImage(self, node):
@@ -821,15 +845,15 @@ class Imager(object):
         """
         name = getattr(node, 'imageoverride', None)
         if name is None:
-            return self.newImage(node.source)
+            return self.newImage(node)
 
-        if name in list(self.staticimages.keys()):
+        if name in self.staticimages:
             return self.staticimages[name]
 
         # Copy or convert the image as needed
         path = self.newFilename()
-        newext = os.path.splitext(path)[-1]
-        oldext = os.path.splitext(name)[-1]
+        newext = os.path.splitext(path)[-1].lower()
+        oldext = os.path.splitext(name)[-1].lower()
         try:
             directory = os.path.dirname(path)
             if directory and not os.path.isdir(directory):
@@ -852,7 +876,7 @@ class Imager(object):
                     else:
                         img = PILImage.open(name)
                         width, height = img.size
-                        scale = self.config['images']['scale-factor']
+                        scale = self.get_scale(node.nodeName)
                         if scale != 1:
                             width = int(width * scale)
                             height = int(height * scale)
@@ -865,7 +889,7 @@ class Imager(object):
             else:
                 img = PILImage.open(name)
                 width, height = img.size
-                scale = self.config['images']['scale-factor']
+                scale = self.get_scale(node.nodeName)
                 if scale != 1:
                     width = int(width * scale)
                     height = int(height * scale)
@@ -879,7 +903,7 @@ class Imager(object):
         except Exception as msg:
             #log.warning('%s in image "%s".  Reverting to LaTeX to generate the image.' % (msg, name))
             pass
-        return self.newImage(node.source)
+        return self.newImage(node)
 
 
 class VectorImager(Imager):
@@ -889,3 +913,6 @@ class VectorImager(Imager):
         Imager.writePreamble(self, document)
 #       self.source.write('\\usepackage{type1ec}\n')
         self.source.write('\\def\\plasTeXregister{}\n')
+
+    def getCompiler(self):
+        return self.config['images']['vector-compiler'] or Imager.getCompiler(self)

@@ -1,12 +1,10 @@
-#!/usr/bin/env python
-
 """
 C.14.1 The picture Environment (p219)
 
 """
 
 from plasTeX import Command, Environment, DimenCommand
-from plasTeX.Logging import getLogger
+
 
 class qbeziermax(Command):
     str = '250'
