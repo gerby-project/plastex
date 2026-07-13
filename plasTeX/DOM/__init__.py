@@ -1072,6 +1072,14 @@ class Node(object):
         """
         charsubs = charsubs or []
 
+        # gerby: never apply character substitutions while in math mode; the
+        # NoCharSubEnvironment mechanism does not cover arguments of commands
+        # used inside math (e.g. \xrightarrow{\alpha ''})
+        doc = self.ownerDocument
+        if charsubs and doc is not None and \
+           getattr(doc, 'context', None) is not None and doc.context.isMathMode:
+            charsubs = []
+
         if self.hasAttributes():
             for key, value in self.attributes.items():
                 if isinstance(value, Node) and key not in self.nonNormalizedAttrs:
