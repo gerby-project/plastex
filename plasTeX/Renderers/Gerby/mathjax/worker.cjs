@@ -17,7 +17,7 @@ async function main() {
         'mathtools', 'begingroup', 'html', ...(config.xypic ? ['xypic'] : [])],
       // LaTeX's empty replacement macro is used to separate leading '['
       // cell text from Xy-pic's optional arguments (including in Kerodon).
-      macros: {empty: '', ...(config.macros || {})}, tags: 'none',
+      macros: {empty: '', mathsection: '\\S', ...(config.macros || {})}, tags: 'none',
       formatError: (_jax, error) => { throw error; }
     },
     svg: {fontCache: 'none', font: 'mathjax-tex', linebreaks: {inline: false}},

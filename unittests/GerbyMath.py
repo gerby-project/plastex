@@ -257,3 +257,22 @@ def test_crossing_arrows_preserve_explicit_hole(tmp_path, monkeypatch, backend):
         assert r'|\hole' in content
     finally:
         renderer.close()
+
+
+@needs_node
+@pytest.mark.parametrize('backend', ['svg', 'mathml'])
+def test_math_in_citation_notes_is_prepared(tmp_path, monkeypatch, backend):
+    monkeypatch.chdir(tmp_path)
+    renderer = pipeline(tmp_path, math_renderer=backend)
+    tex = TeX(renderer.document)
+    tex.input(r'''\documentclass{article}\begin{document}
+See~\cite[$\mathsection 4.1$]{paper}.
+\end{document}''')
+    tex.parse()
+    try:
+        renderer.prepare()
+        assert any(r'\mathsection 4.1' in source for _, source, _, _ in renderer.keys.values())
+        assert renderer.stats['rendered'] == 1
+        assert len(renderer.results) == len(renderer.keys)
+    finally:
+        renderer.close()

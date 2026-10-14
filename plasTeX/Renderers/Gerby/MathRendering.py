@@ -344,8 +344,12 @@ class MathPipeline:
             return
         stack = list(reversed(self.document.childNodes))
         stack.extend(reversed(self.document.userdata.get('footnotes', [])))
+        seen = set()
         while stack:
             node = stack.pop()
+            if id(node) in seen:
+                continue
+            seen.add(id(node))
             if node.nodeName in MATH_NODES | DIAGRAM_NODES | XYPIC_NODES:
                 source = node.source
                 key = self.request(source, node.nodeName not in ('math', 'ensuremath'), node.nodeName)
@@ -353,6 +357,11 @@ class MathPipeline:
                 # These templates use source; they do not render descendants.
                 continue
             stack.extend(reversed(node.childNodes))
+            # Captions, citation notes, and headings may store their math
+            # in argument fragments rather than in the main child tree.
+            for value in (getattr(node, 'attributes', None) or {}).values():
+                if hasattr(value, 'childNodes'):
+                    stack.append(value)
         native = [key for key in self.keys if key not in self.results and self.keys[key][0] == 'tex']
         for start in range(0, len(native), 64):
             self.render_native(native[start:start + 64])
