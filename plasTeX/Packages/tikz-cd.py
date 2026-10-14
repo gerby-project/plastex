@@ -1,7 +1,6 @@
 import os
 import tempfile
 from jinja2 import Template
-from bs4 import BeautifulSoup
 
 from plasTeX import NoCharSubEnvironment, Command
 from plasTeX.PackageResource import PackageProcessFilecontents
@@ -46,6 +45,12 @@ class tikzcd(NoCharSubEnvironment):
 
 def ProcessOptions(options, document):
     """This is called when the package is loaded."""
+
+    # tikz-cd loads TikZ in LaTeX; expose the picture environment here as well.
+    document.context.importMacros({'tikzpicture': tikz.tikzpicture})
+
+    if tikz.gerbyMathPipeline(document):
+        return
 
     try:
         with open(tikz.getConfig(document, 'tikz-cd-template'), "r") as file:

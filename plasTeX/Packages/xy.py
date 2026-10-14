@@ -1,6 +1,31 @@
 #!/usr/bin/env python
 
-from plasTeX import Command
+from plasTeX import Command, NoCharSubEnvironment, sourceChildren
+
+
+class xy(NoCharSubEnvironment):
+    """Preserve the general Xy-pic environment for external rendering."""
+    doCharSubs = False
+
+    @property
+    def source(self):
+        if self.macroMode == self.MODE_NONE:
+            return r'\xy ' + sourceChildren(self) + r'\endxy '
+        return super().source
+
+
+class endxy(Command):
+    def invoke(self, tex):
+        node = self.ownerDocument.createElement('xy')
+        node.macroMode = self.MODE_END
+        node.parentNode = self.parentNode
+        result = node.invoke(tex)
+        return [node] if result is None else result
+
+
+class xybox(Command):
+    args = 'contents:str'
+    doCharSubs = False
 
 class xymatrix(Command):
     args = '{ str }'

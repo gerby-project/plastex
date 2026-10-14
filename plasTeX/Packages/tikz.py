@@ -21,12 +21,6 @@ try:
 except ImportError:
     log.warning('Cannot find jinja2 lib. Cannot use tikz.')
 
-try:
-    from bs4 import BeautifulSoup
-except ImportError:
-    log.warning('Cannot find BeautifulSoup lib. Cannot use tikz.')
-
-
 class tikzpicture(NoCharSubEnvironment):
     """
     A tikz picture whose content will be converted in the processFileContent callback.
@@ -56,6 +50,7 @@ class tikzpicture(NoCharSubEnvironment):
         """ Only avoids unrecognized command warning. """
 
 def tikzConvert(document, content, envname, placeholder):
+    from bs4 import BeautifulSoup
     tmp_dir = document.userdata[envname]['tmp_dir']
     working_dir = document.userdata['working-dir']
     outdir = document.config['files']['directory']
@@ -124,6 +119,9 @@ def getConfig(document, key, default=''):
 def ProcessOptions(options, document):
     """This is called when the package is loaded."""
 
+    if gerbyMathPipeline(document):
+        return
+
     try:
         with open(getConfig(document, 'tikz-template'), "r") as file:
             template = file.read()
@@ -150,3 +148,10 @@ def ProcessOptions(options, document):
             renderers='gerby',
             data=convert)
     document.addPackageResource(cb)
+
+
+def gerbyMathPipeline(document):
+    """The Gerby pipeline renders DOM sources and needs no HTML callback."""
+    return (document.config['general']['renderer'].lower() == 'gerby'
+            and 'gerby' in document.config
+            and document.config['gerby'].get('tikz-renderer') == 'svg')
