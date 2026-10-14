@@ -1,9 +1,21 @@
 name: tikzcd
+{% if config['gerby']['tikz-renderer'] == 'svg' %}
+{{ templates.math_source(obj) }}
+{% else %}
 <tikzcd id="{{ obj.id }}">
 {{ obj.source }}
 </tikzcd>
+{% endif %}
+
+name: xy xybox xymatrix xymatrix@R xymatrix@C xymatrix@M \
+      xymatrix@W xymatrix@H xymatrix@L xymatrix@1
+{{ templates.math_source(obj) }}
 
 name: tikzpicture
+{% if config['gerby']['tikz-renderer'] == 'svg' %}
+{{ templates.math_source(obj) }}
+{% else %}
 <tikzpicture id="{{ obj.id }}">
 {{ obj.source }}
 </tikzpicture>
+{% endif %}

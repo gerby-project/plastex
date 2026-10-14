@@ -1,10 +1,13 @@
-name: math DeclareMathOperator
+name: DeclareMathOperator
 {{ obj.source }}
+
+name: math
+{{ templates.math_source(obj) }}
 
 name: ensuremath eqnarray* align* gather* flalign flalign* \
       multline multline* alignat alignat* split displaymath equation*
 <div class="equation">
-  {{ obj.source }}
+  {{ templates.math_source(obj) }}
 </div>
 
 name: equation eqnarray align gather
@@ -14,5 +17,5 @@ name: equation eqnarray align gather
   {% else %}
     <span class="equation-label">{{ obj.ref }}</span>
   {% endif %}
-  <div>{{ obj.source }}</div>
+  <div>{{ templates.math_source(obj) }}</div>
 </div>

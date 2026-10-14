@@ -1,4 +1,7 @@
 .vscode
+node_modules/
+.gerby-math-cache/
+math-comparison/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

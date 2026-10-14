@@ -302,6 +302,12 @@ class Gerby(_Renderer):
     super().__init__(*args, **kwargs)
     self._no_filenames = set()
     self._preparing_filenames = False
+    self._math_pipeline = None
+
+  def math_source(self, node):
+    if self._math_pipeline is None:
+      return node.source
+    return self._math_pipeline.render_node(node)
 
   def cacheFilenames(self, node):
     # Preserve preorder filename allocation without recursive calls. Cache
@@ -373,6 +379,9 @@ class Gerby(_Renderer):
       self._render(document)
     finally:
       self._no_filenames.clear()
+      if self._math_pipeline is not None:
+        self._math_pipeline.close()
+        self._math_pipeline = None
 
   def _render(self, document):
     # create the tags and labels dictionaries in the document
@@ -393,6 +402,9 @@ class Gerby(_Renderer):
     with open("parts.json", "w") as f:
       json.dump(parts, f)
 
+    from .MathRendering import MathPipeline
+    self._math_pipeline = MathPipeline(document)
+    self._math_pipeline.prepare()
     _Renderer.render(self, document)
 
     # write footnotes if there are any
