@@ -1088,9 +1088,13 @@ class Node(object):
         if not self.hasChildNodes():
             return
 
-        nodes = list(self.childNodes)
-        while self.childNodes:
-            self.childNodes.pop()
+        child_nodes = self.childNodes
+        nodes = list(child_nodes)
+        if type(child_nodes) is list:
+            child_nodes.clear()
+        else:
+            while child_nodes:
+                child_nodes.pop()
         text = []
         for item in nodes:
             if item.nodeType == item.TEXT_NODE:
