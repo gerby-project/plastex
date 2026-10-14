@@ -68,7 +68,8 @@ class GerbyRenderable(Renderable):
         label = [ref.attributes["label"] for ref in self.attributes["caption"].getElementsByTagName("ref")][0]
       # just take the closest theorem
       else:
-        label = searchPrecedingTheorem(self.ownerDocument.userdata["linear"], self)
+        previous = self.ownerDocument.userdata["preceding-theorems"].get(id(self))
+        label = previous.id
 
       if label in self.ownerDocument.userdata["labels"]:
         tag = self.ownerDocument.userdata["labels"][label]
@@ -147,6 +148,17 @@ def linearRepresentation(document):
     stack.extend(node.childNodes)
 
   document.userdata["linear"] = list(reversed(document.userdata["linear"]))
+  cachePrecedingTheorems(document)
+
+def cachePrecedingTheorems(document):
+  """Associate proofs with the preceding theorem in a single pass."""
+  previous = None
+  preceding = document.userdata["preceding-theorems"] = dict()
+  for node in document.userdata["linear"]:
+    if node.nodeName == "thmenv":
+      previous = node
+    elif node.nodeName == "proof":
+      preceding[id(node)] = previous
 
 def tagRollCall(document):
     # Check whether or not all tags appear in the document
