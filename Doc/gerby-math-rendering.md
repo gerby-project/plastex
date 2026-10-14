@@ -2,7 +2,7 @@
 
 Gerby can pre-render mathematics during the plasTeX run. Ordinary formulas
 use MathJax 4; TikZ and tikz-cd use native TeX. Xy-pic has two selectable
-implementations, both producing static SVG assets:
+implementations, both producing inline SVG in the generated fragments:
 
 | Option | Implementation |
 | --- | --- |
@@ -68,7 +68,8 @@ The preview shows at most 50 fragments; use `--tag TAG` (repeatable) to select
 specific diagrams, or `--limit 0` to show all fragments. Both builds always
 process the complete document. The helper stages its inputs so it leaves
 the source project's auxiliary files unchanged.
-Logs, SVG assets, and `timings.json` remain in the comparison directory.
+Logs, rendered fragments, and `timings.json` remain in the comparison directory.
+The comparison HTML is self-contained.
 
 ## Macros, resources, and integration
 
@@ -89,15 +90,16 @@ or a document environment. Relative option paths and native input resources
 resolve from the source directory. The original document's entire preamble
 is not copied automatically.
 
-Publish `images/math-*.svg` together with the generated fragments. The pipeline
-honors `--image-base-url` for those URLs. Gerby's existing equation numbers and
-tag links stay outside the rendered math. Each image stores its TeX in `alt`
-and `data-math-tex`, carries its baseline and dimensions in CSS, and has classes
+Publish the generated fragments directly; mathematics needs no separate SVG
+assets or image URL configuration. Gerby's existing equation numbers and
+tag links stay outside the rendered math. Each SVG stores its TeX in
+`aria-label` and `data-math-tex`, carries its baseline and dimensions in CSS, and has classes
 that tell MathJax to ignore it. With all three renderers enabled, the generated
 math needs no MathJax or XyJax JavaScript in readers' browsers. Existing website
 scripts and unrelated client-side math may still need their own configuration.
-SVG images use fixed black math; website color changes do not recolor external
-SVG assets. Each SVG formula is an unbroken box; zero-strength `linebreak[0]`
+MathJax formulas inherit the surrounding text color; native diagrams preserve
+their TeX colors. Inline SVG can also be styled by the website's CSS.
+Each SVG formula is an unbroken box; zero-strength `linebreak[0]`
 hints are dropped. MathML uses the reader's browser math font and can look different.
 XyJax's diagram SVG does not provide full mathematical accessibility.
 
@@ -109,8 +111,10 @@ include expanded source, resolved references, display mode, backend, macros,
 additional preamble, pinned JavaScript dependencies, converter identity, and
 renderer implementation. Native cache records also track the TeX package,
 font, and input files actually used; changes invalidate those records.
-Asset URLs include the SVG content hash, including after a dependency changes.
-SVGs are separate documents, avoiding duplicate glyph IDs when a formula repeats.
+Canonical SVGs stay in the build cache. Before embedding, local glyph,
+clipping, and paint references receive unique scopes for each occurrence and
+written fragment. The comparison helper scopes the assembled page as well,
+so showing an equation beside its enclosing lemma keeps those IDs distinct.
 
 By default the cache is `.gerby-math-cache` in the output directory. Set
 `--math-cache` to an absolute directory outside the output tree if that tree

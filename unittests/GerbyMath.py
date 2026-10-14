@@ -10,7 +10,8 @@ from plasTeX.client import main, collect_renderer_config
 from plasTeX.Config import defaultConfig
 from plasTeX.TeX import TeX, TeXDocument
 from plasTeX.Renderers.Gerby.MathRendering import (
-    MathPipeline, MathJaxWorker, MathRenderError, normalize_source)
+    MathPipeline, MathJaxWorker, MathRenderError, normalize_source,
+    scope_svg_ids, scope_inline_svgs)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -65,14 +66,14 @@ def test_complete_svg_escaping_and_warm_cache(tmp_path, monkeypatch):
     first = pipeline(tmp_path, math_renderer='svg')
     try:
         content = first.render('$x^2+1<y$', False)
-        assert 'alt="$x^2+1&lt;y$"' in content
-        svg = ET.parse(next((tmp_path / 'images').glob('*.svg'))).getroot()
+        assert 'aria-label="$x^2+1&lt;y$"' in content
+        svg = ET.fromstring(content)
         groups = [node.attrib.get('data-latex') for node in svg.iter()]
         assert '+' in groups and '1' in groups and '<' in groups and 'y' in groups
     finally:
         first.close()
-    # Reuse must work without starting Node, and restore deleted output assets.
-    shutil.rmtree(str(tmp_path / 'images'))
+    # Reuse must work without starting Node or publishing any SVG files.
+    assert not (tmp_path / 'images').exists()
     def unexpected_worker(*args, **kwargs):
         raise AssertionError('Warm cache started MathJax')
     monkeypatch.setattr('plasTeX.Renderers.Gerby.MathRendering.MathJaxWorker', unexpected_worker)
@@ -81,7 +82,7 @@ def test_complete_svg_escaping_and_warm_cache(tmp_path, monkeypatch):
         assert second.render('$x^2+1<y$', False) == content
         assert second.stats['cache_hits'] == 1
         assert second.stats['rendered'] == 0
-        assert len(list((tmp_path / 'images').glob('*.svg'))) == 1
+        assert not (tmp_path / 'images').exists()
     finally:
         second.close()
 
@@ -125,18 +126,19 @@ def test_tagged_book_both_backends_and_native_batch(tmp_path, monkeypatch, backe
     stats = json.loads((output / 'math-rendering.json').read_text())
     assert stats['tex_batches'] == 1
     assert stats['rendered'] == 9
-    assets = list((output / 'images').glob('*.svg'))
-    assert len(assets) == 9
-    for asset in assets:
-        assert ET.parse(asset).getroot().tag == '{http://www.w3.org/2000/svg}svg'
+    assert not list((output / 'images').glob('*.svg'))
     contents = '\n'.join(file.read_text() for file in output.glob('*.tag'))
     expected = 'tex' if backend == 'svg' else 'xyjaxv4'
     assert 'data-math-backend="{}"'.format(expected) in contents
     assert 'href="/tag/0002"' in contents
     assert '$x^2+1$' in contents
     assert '<tikzcd' not in contents and '<tikzpicture' not in contents
-    refs = re.findall(r'src="(images/[^\"]+)"', contents)
-    assert len(refs) > len(set(refs))  # repeated formulas share an asset
+    assert '<svg' in contents and '<img' not in contents
+    assert '<?xml' not in contents
+    # Separate equations also propagate into their parent fragment. Their
+    # SVG definitions must stay distinct when these outputs are assembled.
+    ids = re.findall(r'\bid="(gerby-[^"]+)"', contents)
+    assert len(ids) == len(set(ids))
     # Full rerender must require neither Node nor TeX on a cache hit.
     monkeypatch.chdir(tmp_path)
     def unexpected(*args, **kwargs):
@@ -159,7 +161,8 @@ def test_native_preamble_dependency_change(tmp_path, monkeypatch):
     try:
         content = first.render(r'$\xymatrix{\testmacro\ar[r] & B}$', False)
         result = next(iter(first.results.values()))
-        svg = ET.parse(next((tmp_path / 'images').glob('*.svg'))).getroot()
+        key = next(iter(first.results))
+        svg = ET.parse(first.cache / (key + '.svg')).getroot()
         # SVG's PDF points are 72/in; TeX points are 72.27/in. Extra
         # paragraph indentation would shrink the diagram in its CSS box.
         assert float(svg.attrib['width'].rstrip('pt')) == pytest.approx(
@@ -188,9 +191,69 @@ def test_general_xy_diagram(tmp_path, monkeypatch, backend, opening, closing):
     try:
         source = '$' + opening + r' (0,0)*+{A}="a", (20,0)*+{B}="b", "a";"b" **@{-} ' + closing + '$'
         content = renderer.render(source, False)
-        assert '<img' in content
-        svg = ET.parse(next((tmp_path / 'images').glob('*.svg'))).getroot()
+        assert '<svg' in content
+        svg = ET.fromstring(content)
         graphical = ('{http://www.w3.org/2000/svg}path', '{http://www.w3.org/2000/svg}line')
         assert sum(node.tag in graphical for node in svg.iter()) >= 3
+    finally:
+        renderer.close()
+
+
+def test_svg_ids_and_local_references_are_scoped():
+    svg = '''<svg xmlns="http://www.w3.org/2000/svg"
+        xmlns:xlink="http://www.w3.org/1999/xlink" aria-labelledby="label description">
+      <title id="label">A</title><desc id="description">Diagram</desc>
+      <defs><path id="glyph" d="M0 0L1 1"/>
+        <clipPath id="clip"><path d="M0 0L1 1"/></clipPath>
+        <linearGradient id="paint"/></defs>
+      <g clip-path="url(#clip)" style="fill:url('#paint');stroke:#fff">
+        <use xlink:href="#glyph"/><use href="#glyph"/>
+        <image href="other.svg#glyph"/>
+      </g>
+    </svg>'''
+    first = ET.fromstring(scope_svg_ids(svg, 'first'))
+    second = ET.fromstring(scope_svg_ids(svg, 'second'))
+    first_ids = {node.attrib['id'] for node in first.iter() if 'id' in node.attrib}
+    second_ids = {node.attrib['id'] for node in second.iter() if 'id' in node.attrib}
+    assert not first_ids & second_ids
+    assert first.attrib['aria-labelledby'] == 'first-label first-description'
+    group = first.find('{http://www.w3.org/2000/svg}g')
+    assert group.attrib['clip-path'] == 'url(#first-clip)'
+    assert group.attrib['style'] == "fill:url('#first-paint');stroke:#fff"
+    uses = group.findall('{http://www.w3.org/2000/svg}use')
+    assert uses[0].attrib['{http://www.w3.org/1999/xlink}href'] == '#first-glyph'
+    assert uses[1].attrib['href'] == '#first-glyph'
+    assert group.find('{http://www.w3.org/2000/svg}image').attrib['href'] == 'other.svg#glyph'
+
+
+def test_assembled_inline_svg_handles_nested_svg():
+    svg = '''<svg xmlns="http://www.w3.org/2000/svg" class="gerby-math">
+      <defs><path id="gerby-svg-glyph" d="M0 0L1 1"/></defs>
+      <svg><use href="#gerby-svg-glyph"/></svg>
+    </svg>'''
+    content = scope_inline_svgs('<div>' + svg + svg + '</div>', 'page')
+    document = ET.fromstring(content)
+    ids = [node.attrib['id'] for node in document.iter() if 'id' in node.attrib]
+    assert len(ids) == len(set(ids)) == 2
+    refs = [node.attrib['href'][1:] for node in document.iter() if 'href' in node.attrib]
+    assert set(refs) == set(ids)
+    # Written fragments already have gerby-fragment-* scopes; the page
+    # assembler must still scope them when the same fragment is repeated.
+    repeated = scope_inline_svgs(content + content, 'assembled')
+    ids = re.findall(r'\bid="([^"]+)"', repeated)
+    assert len(ids) == len(set(ids))
+
+
+@needs_node
+@needs_tex
+@pytest.mark.parametrize('backend', ['xyjaxv4', 'svg'])
+def test_crossing_arrows_preserve_explicit_hole(tmp_path, monkeypatch, backend):
+    monkeypatch.chdir(tmp_path)
+    renderer = pipeline(tmp_path, xypic_renderer=backend)
+    try:
+        source = r'$\xymatrix{A\ar[dr]|\hole & B\ar[dl]\\C & D}$'
+        content = renderer.render(source, True)
+        assert '<svg' in content
+        assert r'|\hole' in content
     finally:
         renderer.close()

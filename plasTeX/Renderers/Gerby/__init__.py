@@ -371,6 +371,8 @@ class Gerby(_Renderer):
     # Remove extra paragraph tags around displaymath
     s = re.compile(r'<p>(<div class="equation".*?<\/div>)<\/p>', flags=re.DOTALL).sub(r'\1',s)
 
+    if self._math_pipeline is not None and self._math_pipeline.enabled:
+      s = self._math_pipeline.scope_fragment(s)
     return s
 
   def render(self, document):
@@ -413,7 +415,10 @@ class Gerby(_Renderer):
       Node.renderer = self
       for footnote in document.userdata["footnotes"]:
         with open("{0}.footnote".format(footnote.id),"w") as f:
-          f.write(str(footnote))
+          content = str(footnote)
+          if self._math_pipeline.enabled:
+            content = self._math_pipeline.scope_fragment(content)
+          f.write(content)
       del Node.renderer
       unmix(Node, Gerby.renderableClass)
 

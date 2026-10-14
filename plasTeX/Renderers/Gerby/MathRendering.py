@@ -1,7 +1,7 @@
 """Optional, cached build-time mathematics and diagram rendering.
 
 MathJax runs once per build; native diagrams are compiled in bounded batches.
-SVG assets have their own documents, so cached glyph IDs cannot collide.
+SVGs are embedded in fragments, with scoped glyph and clipping IDs.
 """
 import hashlib
 import html
@@ -25,6 +25,66 @@ XYPIC_NODES = frozenset(('xy xybox xymatrix xymatrix@R xymatrix@C '
     'xymatrix@M xymatrix@W xymatrix@H xymatrix@L xymatrix@1').split())
 XYPIC = re.compile(r'\\(?:xymatrix\b|xy\b|xybox\b|begin\s*\{xy\})')
 TIKZ = re.compile(r'\\begin\s*\{(?:tikzpicture|tikzcd)\}')
+SVG_NAMESPACE = 'http://www.w3.org/2000/svg'
+XLINK_NAMESPACE = 'http://www.w3.org/1999/xlink'
+ET.register_namespace('', SVG_NAMESPACE)
+ET.register_namespace('xlink', XLINK_NAMESPACE)
+SVG_TAG = re.compile(r'</?svg\b[^>]*>', re.I)
+SVG_URL = re.compile(r'url\(\s*([\'"]?)#([^\s)\'"]+)\1\s*\)')
+SVG_ROOT_ATTRIBUTES = re.compile(
+    r'\s(?:class|style|width|height|role|focusable|aria-label|data-math-backend|data-math-tex)'
+    r'\s*=\s*(?:"[^"]*"|\'[^\']*\')')
+
+
+def scope_svg_ids(svg, prefix):
+    """Scope local references without changing colors, text, or external URLs."""
+    if not re.search(r'\sid\s*=', svg):
+        return svg
+    root = ET.fromstring(svg)
+    identifiers = {node.attrib['id']: prefix + '-' + node.attrib['id']
+                   for node in root.iter() if 'id' in node.attrib}
+    def urls(value):
+        return SVG_URL.sub(lambda match: 'url(' + match.group(1) + '#' +
+            identifiers.get(match.group(2), match.group(2)) + match.group(1) + ')', value)
+    for node in root.iter():
+        for name, value in list(node.attrib.items()):
+            if name == 'id':
+                node.set(name, identifiers[value])
+            elif name in ('href', '{' + XLINK_NAMESPACE + '}href') and value.startswith('#'):
+                node.set(name, '#' + identifiers.get(value[1:], value[1:]))
+            elif name in ('aria-labelledby', 'aria-describedby'):
+                node.set(name, ' '.join(identifiers.get(part, part) for part in value.split()))
+            elif name != 'aria-label' and not name.startswith('data-'):
+                node.set(name, urls(value))
+        if node.tag == '{' + SVG_NAMESPACE + '}style' and node.text:
+            node.text = urls(node.text)
+    return ET.tostring(root, encoding='unicode')
+
+
+def scope_inline_svgs(content, prefix):
+    """Scope each SVG in an assembled fragment or comparison page."""
+    # Most MathJax SVGs have no IDs (fontCache=none).
+    if 'gerby-svg-' not in content:
+        return content
+    pieces, cursor, depth, start, occurrence = [], 0, 0, 0, 0
+    for match in SVG_TAG.finditer(content):
+        token = match.group()
+        if token.startswith('</'):
+            depth -= 1
+        else:
+            if depth == 0:
+                start = match.start()
+            if not token.endswith('/>'):
+                depth += 1
+        if depth == 0:
+            svg = content[start:match.end()]
+            if 'gerby-math' in svg[:svg.find('>')]:
+                occurrence += 1
+                svg = scope_svg_ids(svg, prefix + '-' + str(occurrence))
+            pieces.extend((content[cursor:start], svg))
+            cursor = match.end()
+    pieces.append(content[cursor:])
+    return ''.join(pieces)
 
 
 class MathRenderError(RuntimeError):
@@ -155,12 +215,13 @@ class MathPipeline:
             ('math-renderer', 'xypic-renderer', 'tikz-renderer'))
         self.cache = Path(self.options['math-cache']).resolve()
         self.source_dir = Path(document.userdata['working-dir'])
-        self.output = Path.cwd() / 'images'
         self.worker = None
         self.results = {}
         self.keys = {}
         self.nodes = {}
-        self.assets = set()
+        self.svg_sources = {}
+        self.svg_occurrence = 0
+        self.fragment_occurrence = 0
         self.dependency_stats = {}
         self.fingerprints = {}
         self.stats = {'requests': 0, 'cache_hits': 0, 'rendered': 0, 'tex_batches': 0}
@@ -169,7 +230,6 @@ class MathPipeline:
         if not self.enabled:
             return
         self.cache.mkdir(parents=True, exist_ok=True)
-        self.output.mkdir(exist_ok=True)
         if self.options['math-preamble']:
             self.preamble = self.read_source_file(self.options['math-preamble'])
         if self.options['mathjax-config']:
@@ -273,7 +333,6 @@ class MathPipeline:
                 raise MathRenderError('Invalid SVG for {}: {}'.format(key, error)) from error
             if root.tag != '{http://www.w3.org/2000/svg}svg':
                 raise MathRenderError('Converter did not produce an SVG')
-            result['asset_digest'] = hashlib.sha256(svg.encode('utf-8')).hexdigest()
             write('.svg', svg)
             result['svg'] = True
         write('.json', json.dumps(result, sort_keys=True))
@@ -416,15 +475,24 @@ class MathPipeline:
         attributes = 'class="gerby-math mathjax_ignore tex2jax_ignore" data-math-backend="{}" data-math-tex="{}"'.format(backend, escaped)
         if 'mathml' in result:
             return '<span {}>{}</span>'.format(attributes, result['mathml'])
-        filename = 'math-' + result['asset_digest'] + '.svg'
-        target = self.output / filename
-        if key not in self.assets:
-            shutil.copyfile(str(self.cache / (key + '.svg')), str(target))
-            self.assets.add(key)
-        style = 'width:{};height:{};{}max-width:none'.format(result['width'], result['height'], result['style'])
-        url = self.document.config['images']['base-url'].rstrip('/')
-        url = (url + '/' if url else '') + 'images/' + filename
-        return '<img {} src="{}" alt="{}" style="{}">'.format(attributes, html.escape(url, quote=True), escaped, style)
+        if key not in self.svg_sources:
+            svg = (self.cache / (key + '.svg')).read_text(encoding='utf-8')
+            self.svg_sources[key] = svg[svg.index('<svg'):].strip()
+        self.svg_occurrence += 1
+        svg = scope_svg_ids(self.svg_sources[key],
+            'gerby-svg-{}-{}'.format(key[:16], self.svg_occurrence))
+        opening, body = svg.split('>', 1)
+        opening = SVG_ROOT_ATTRIBUTES.sub('', opening)
+        style = 'width:{};height:{};{}max-width:none;display:inline-block'.format(
+            result['width'], result['height'], result['style'])
+        return '{} {} width="{}" height="{}" role="img" focusable="false" aria-label="{}" style="{}">{}'.format(
+            opening, attributes, result['width'], result['height'], escaped, style, body)
+
+    def scope_fragment(self, content):
+        # A child fragment may also propagate into its parent's output. Give
+        # each written fragment a distinct scope before they are assembled.
+        self.fragment_occurrence += 1
+        return scope_inline_svgs(content, 'gerby-fragment-' + str(self.fragment_occurrence))
 
     def close(self):
         if self.worker is not None:

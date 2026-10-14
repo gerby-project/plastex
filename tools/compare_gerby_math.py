@@ -10,9 +10,10 @@ import sys
 import tempfile
 import time
 
-
 def main():
     root = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(root))
+    from plasTeX.Renderers.Gerby.MathRendering import scope_inline_svgs
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source', type=Path, default=root / 'examples/gerby-math/book.tex')
     parser.add_argument('--output', type=Path, default=Path('math-comparison'))
@@ -67,7 +68,6 @@ def main():
         cells = []
         for backend in ('xyjaxv4', 'svg'):
             content = (output / backend / filename).read_text(encoding='utf-8')
-            content = content.replace('src="images/', 'src="' + backend + '/images/')
             cells.append('<td><div class="fragment">' + content + '</div></td>')
         rows.append('<tr><th colspan="2">' + html.escape(filename) + '</th></tr><tr>' + ''.join(cells) + '</tr>')
     page = '''<!doctype html><html lang="en"><meta charset="utf-8">
@@ -79,15 +79,15 @@ td,th {padding:1rem;border:1px solid #ddd;vertical-align:top;overflow:auto}
 .fragment {overflow:auto}
 th {font:16px system-ui;text-align:left;background:#f4f4f4}
 .equation {text-align:center;margin:1rem 0}.equation-label {float:right}
-td img {max-width:none}pre {white-space:pre-wrap;font-size:14px}
+td svg {max-width:none}pre {white-space:pre-wrap;font-size:14px}
 </style><h1>Gerby math backend comparison</h1>
-<p>Both columns use static assets. XyJax v4 runs during the build;
+<p>Both columns contain inline SVG. XyJax v4 runs during the build;
 the native backend compiles Xy-pic with TeX and converts the PDF to SVG.
 TikZ and tikz-cd use native TeX in both columns.</p>
 <table><tr><th>XyJax v4 / MathJax 4</th><th>Native TeX / pdf2svg</th></tr>'''
     page += ''.join(rows) + '</table><h2>Build measurements</h2><pre>'
     page += html.escape(json.dumps(timings, indent=2)) + '</pre></html>'
-    (output / 'comparison.html').write_text(page, encoding='utf-8')
+    (output / 'comparison.html').write_text(scope_inline_svgs(page, 'comparison'), encoding='utf-8')
     (output / 'timings.json').write_text(json.dumps(timings, indent=2) + '\n', encoding='utf-8')
     print(output / 'comparison.html')
 
