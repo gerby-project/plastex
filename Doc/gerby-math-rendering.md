@@ -143,3 +143,46 @@ python -m pytest -q unittests/GerbyMath.py unittests/Gerby.py
 Tests exercise both real engines, SVG escaping and complete inline output,
 MathML, macro configuration and isolation, tag preservation, native batching,
 cache reuse without invoking either engine, and invalidation of included TeX files.
+
+## Full Stacks build timings
+
+Measured on 14 October 2026 with Python 3.14.6, Node 22.12.0, and MathJax 4.1.3.
+The input was Stacks revision `d4f9b39ed6077e81d296a40ec30cbf3739ad986f`,
+including all 116 chapters and nine parts (including Relative Cycles).
+Each run generated all 21,369 tag fragments. Both pre-rendered configurations
+used `--xypic-renderer=xyjaxv4 --tikz-renderer=svg`; the corpus had
+122,077 unique ordinary formulas and 3,452 unique Xy-pic diagrams.
+The MathML configuration therefore still emitted SVG for those diagrams.
+
+| Ordinary math | Math cache | Full build | Added vs. raw | Observed range |
+| --- | --- | ---: | ---: | ---: |
+| Raw TeX | None | 145.0 s | — | 142.6–195.9 s |
+| SVG | Empty | 417.1 s | 272.1 s (+188%) | One run |
+| SVG | Reused | 220.7 s | 75.7 s (+52%) | 216.0–225.5 s |
+| MathML | Empty | 430.7 s | 285.7 s (+197%) | One run |
+| MathML | Reused | 223.9 s | 78.8 s (+54%) | 201.2–246.5 s |
+
+These are medians of three raw runs, two warm runs per renderer, and one cold
+run per renderer. Builds ran sequentially, and the warm configurations were
+repeated in reverse order after the raw baseline showed substantial variation.
+One raw run spent 89 seconds rendering/writing fragments, compared with
+41–42 seconds in the other two; its result is retained in the range.
+The warm ranges overlap, so these measurements do not establish a consistent
+speed advantage for either output format.
+
+Timing covers the complete Gerby/plasTeX CLI process, including startup,
+parsing, pre-rendering, fragment generation, and shutdown. Input staging,
+output verification and cleanup, TeX book generation, and website database
+import are excluded. Cold means an empty application math cache; operating
+system caches were not flushed. Every warm run created a new output tree
+and reused an absolute cache directory outside that tree.
+All 125,529 items were cache hits in warm runs, with zero engine renders.
+Raw repetitions and each renderer's cold/warm runs produced identical
+fragment SHA-256 hashes. All SVG was inline, with zero external SVG assets.
+
+Uncompressed generated output totaled 63.8 MB for raw TeX, 4.22 GB for SVG,
+and 728 MB for MathML. These totals include repeated content in parent and
+child fragments, and exclude the separate build cache; they are not page
+transfer sizes. Retaining the math cache reduces these full builds from
+about seven minutes to about three minutes forty seconds. Set `--math-cache`
+outside a cleaned output directory to retain that saving.
