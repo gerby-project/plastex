@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from plasTeX.client import main
@@ -31,6 +33,21 @@ def test_proof_associations_and_caption_override(tmp_path, monkeypatch):
     assert "Second proof." in (output / "0001-2.proof").read_text()
     assert "Explicit reference." in (output / "0001-3.proof").read_text()
     assert "Implicit reference." in (output / "0002-1.proof").read_text()
+
+
+def test_parts_metadata_and_unrecognized_command(tmp_path, monkeypatch):
+    output = render_book(tmp_path, monkeypatch, r"""
+\part{First}\label{part:first}
+\chapter{One}\label{chapter:one}
+\unknowncommand
+\chapter{Two}\label{chapter:two}
+\part{Second}\label{part:second}
+\chapter{Three}\label{chapter:three}
+""", "0001,part:first\n0002,chapter:one\n0003,chapter:two\n"
+       "0004,part:second\n0005,chapter:three\n")
+    assert json.loads((output / "parts.json").read_text()) == {
+        "1": ["2", "1"], "2": ["3"]}
+    assert len(list(output.glob("*.tag"))) == 5
 
 
 def test_proof_outside_document_has_no_filename_override():

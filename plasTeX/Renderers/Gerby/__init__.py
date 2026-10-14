@@ -160,6 +160,45 @@ def cachePrecedingTheorems(document):
     elif node.nodeName == "proof":
       preceding[id(node)] = previous
 
+def collectMetadata(document):
+  """Collect metadata using the existing reverse document traversal order."""
+  linear = []
+  attendance = dict.fromkeys(document.userdata["tags"], False)
+  parts = {}
+  current = None
+  stack = list(document.childNodes)
+
+  while stack:
+    node = stack.pop()
+    if node.nodeType == Node.TEXT_NODE:
+      continue
+    name = node.nodeName
+
+    if name in ["thmenv", "proof", "reference", "history", "slogan"]:
+      linear.append(node)
+
+    tag = node.userdata.get("tag")
+    if tag in attendance:
+      attendance[tag] = True
+
+    if name == "part":
+      current = node.ref.source
+      parts[current] = []
+    elif name == "chapter" and current is not None:
+      parts[current].append(node.ref.source)
+
+    if name == "bibliography":
+      for filename in node.attributes["files"].split(","):
+        shutil.copyfile(os.path.join(document.userdata["working-dir"], filename + ".bib"),
+                        filename + ".bib")
+
+    stack.extend(node.childNodes)
+
+  linear.reverse()
+  document.userdata["linear"] = linear
+  cachePrecedingTheorems(document)
+  return attendance, parts
+
 def tagRollCall(document):
     # Check whether or not all tags appear in the document
     attendanceSheet = dict(map(lambda t: (t, False), document.userdata["tags"].keys()))
@@ -292,23 +331,18 @@ class Gerby(_Renderer):
     # create the tags and labels dictionaries in the document
     loadTags(document)
 
-    copyBibliographies(document)
-
     # validity check
     checkLabels(document)
 
     # we decorate all DOM elements with labels that appear in the tags file
     decorateTags(document, document.userdata["labels"])
 
-    # create a linearised version of the document containing theorems and proofs in order
-    linearRepresentation(document)
-
-    tagAttendanceSheet = tagRollCall(document)
+    # Collect bibliography, proof, tag, and part metadata together.
+    tagAttendanceSheet, parts = collectMetadata(document)
     for tag in filter(lambda t: not tagAttendanceSheet[t], tagAttendanceSheet):
       log.warning("document does not contain tag %s" % tag)
 
     # associate parts to chapters
-    parts = partsList(document)
     with open("parts.json", "w") as f:
       json.dump(parts, f)
 
