@@ -46,6 +46,26 @@ def willItBeWhitespace(node):
 
 class GerbyRenderable(Renderable):
   @property
+  def filename(self):
+    # Text nodes cannot produce Gerby fragments. Avoid the override and
+    # configuration lookups performed by the generic filename property.
+    if self.nodeType == Node.TEXT_NODE:
+      return None
+
+    renderer = Node.renderer
+    if renderer._preparing_filenames:
+      return Renderable.filename.fget(self)
+    try:
+      if self in renderer._no_filenames:
+        return None
+    except TypeError:
+      return Renderable.filename.fget(self)
+    filename = Renderable.filename.fget(self)
+    if filename is None:
+      renderer._no_filenames.add(self)
+    return filename
+
+  @property
   def filenameoverride(self):
     # handle tags
     if "tag" in self.userdata:
@@ -278,6 +298,26 @@ class Gerby(_Renderer):
   vectorImageTypes = ['.svg']
   renderableClass = GerbyRenderable
 
+  def __init__(self, *args, **kwargs):
+    super().__init__(*args, **kwargs)
+    self._no_filenames = set()
+    self._preparing_filenames = False
+
+  def cacheFilenames(self, node):
+    # Preserve preorder filename allocation without recursive calls. Cache
+    # negative decisions only for nodes actually visited during rendering;
+    # most descendants inside mathematical source are never rendered.
+    self._preparing_filenames = True
+    try:
+      stack = [node]
+      while stack:
+        current = stack.pop()
+        if current.nodeType != Node.TEXT_NODE:
+          _ = current.filename
+        stack.extend(reversed(current.childNodes))
+    finally:
+      self._preparing_filenames = False
+
   def loadTemplates(self, document):
     """Load templates as in PageTemplate but also look for packages that
     want to override some templates and handles extra css and javascript."""
@@ -328,6 +368,13 @@ class Gerby(_Renderer):
     return s
 
   def render(self, document):
+    self._no_filenames.clear()
+    try:
+      self._render(document)
+    finally:
+      self._no_filenames.clear()
+
+  def _render(self, document):
     # create the tags and labels dictionaries in the document
     loadTags(document)
 
